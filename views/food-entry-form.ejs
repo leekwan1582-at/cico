@@ -1,0 +1,23 @@
+<div class="mb-3">
+  <label class="form-label" for="dateTime">Date and Time</label>
+  <input class="form-control" type="datetime-local" id="dateTime" name="dateTime" value="<%= typeof foodEntry !== 'undefined' && foodEntry && foodEntry.dateTime ? foodEntry.dateTime.replace(' ', 'T').slice(0, 16) : '' %>">
+</div>
+<div class="mb-3">
+  <label class="form-label" for="foodName">Food Name</label>
+  <input class="form-control" type="text" id="foodName" name="foodName" value="<%= typeof foodEntry !== 'undefined' && foodEntry ? (foodEntry.foodName || '') : '' %>">
+</div>
+<div class="mb-3">
+  <label class="form-label" for="calories">Calories</label>
+  <input class="form-control" type="number" id="calories" name="calories" value="<%= typeof foodEntry !== 'undefined' && foodEntry ? (foodEntry.calories ?? '') : '' %>">
+</div>
+<div class="mb-3">
+  <label class="form-label" for="servingSize">Serving Size</label>
+  <input class="form-control" type="number" id="servingSize" name="servingSize" value="<%= typeof foodEntry !== 'undefined' && foodEntry ? (foodEntry.servingSize ?? '') : '' %>">
+  <label class="form-label mt-2" for="unit">Unit</label>
+  <select class="form-select" id="unit" name="unit">
+    <option value="serving" <%= typeof foodEntry !== 'undefined' && foodEntry && foodEntry.unit === 'serving' ? 'selected' : '' %>>Serving</option>
+    <option value="gram" <%= typeof foodEntry !== 'undefined' && foodEntry && foodEntry.unit === 'gram' ? 'selected' : '' %>>Gram</option>
+    <option value="ounce" <%= typeof foodEntry !== 'undefined' && foodEntry && foodEntry.unit === 'ounce' ? 'selected' : '' %>>Ounce</option>
+    <option value="pound" <%= typeof foodEntry !== 'undefined' && foodEntry && foodEntry.unit === 'pound' ? 'selected' : '' %>>Pound</option>
+  </select>
+</div>

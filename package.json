@@ -1,0 +1,29 @@
+{
+  "name": "cico",
+  "version": "1.0.0",
+  "description": "To login into the database, use `mysql -u root -pmariadb -h 127.0.0.1`",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leekwan1582-at/cico.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/leekwan1582-at/cico/issues"
+  },
+  "homepage": "https://github.com/leekwan1582-at/cico#readme",
+  "dependencies": {
+    "dotenv": "^18.0.10",
+    "ejs": "^7.0.2",
+    "express": "^5.3.0",
+    "express-ejs-layouts": "^2.5.1",
+    "mysql2": "^3.24.6",
+    "nodemon": "^3.1.14"
+  }
+}
