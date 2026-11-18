@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="100%" height="100%" style="background:#0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Card shadow and gradients -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <linearGradient id="headerUsers" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="headerExchanges" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="headerAssets" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="headerAlerts" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    
+    <!-- Crow's foot markers -->
+    <marker id="crow" viewBox="0 0 16 16" refX="16" refY="8" markerWidth="14" markerHeight="14" orient="auto-start-reverse">
+      <path d="M 0 0 L 16 8 L 0 16 M 16 8 L 0 8" fill="none" stroke="#94a3b8" stroke-width="2"/>
+    </marker>
+    <marker id="one" viewBox="0 0 16 16" refX="0" refY="8" markerWidth="14" markerHeight="14" orient="auto-start-reverse">
+      <line x1="6" y1="0" x2="6" y2="16" stroke="#94a3b8" stroke-width="2"/>
+      <line x1="12" y1="0" x2="12" y2="16" stroke="#94a3b8" stroke-width="2"/>
+    </marker>
+  </defs>
+
+  <!-- Title & Subtitle -->
+  <text x="480" y="38" text-anchor="middle" fill="#f8fafc" font-size="20" font-weight="700" letter-spacing="0.5">CRYPTO_ALERTS RELATIONAL DATABASE SCHEMA</text>
+  <text x="480" y="60" text-anchor="middle" fill="#94a3b8" font-size="13">Entity Relationship Diagram (Crow's Foot Notation) — 4 Normalized Tables (InnoDB / MySQL 8.x)</text>
+
+  <!-- TABLE 1: USERS -->
+  <g transform="translate(40, 90)" filter="url(#shadow)">
+    <rect width="250" height="190" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 240 0 Q 250 0 250 10 L 250 42 L 0 42 Z" fill="url(#headerUsers)"/>
+    <text x="125" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">users</text>
+    <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
+      <text y="0" font-weight="700" fill="#60a5fa">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
+      <text y="28">username <tspan fill="#94a3b8">VARCHAR(50) UQ</tspan></text>
+      <text y="56">email <tspan fill="#94a3b8">VARCHAR(100) UQ</tspan></text>
+      <text y="84">created_at <tspan fill="#94a3b8">DATETIME</tspan></text>
+    </g>
+  </g>
+
+  <!-- TABLE 2: EXCHANGES -->
+  <g transform="translate(40, 340)" filter="url(#shadow)">
+    <rect width="250" height="220" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 240 0 Q 250 0 250 10 L 250 42 L 0 42 Z" fill="url(#headerExchanges)"/>
+    <text x="125" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">exchanges</text>
+    <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
+      <text y="0" font-weight="700" fill="#a78bfa">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
+      <text y="28">ccxt_id <tspan fill="#94a3b8">VARCHAR(30) UQ</tspan></text>
+      <text y="56">display_name <tspan fill="#94a3b8">VARCHAR(50)</tspan></text>
+      <text y="84">is_active <tspan fill="#94a3b8">BOOLEAN (T/F)</tspan></text>
+      <text y="112">priority_order <tspan fill="#94a3b8">INT UNSIGNED</tspan></text>
+    </g>
+  </g>
+
+  <!-- TABLE 3: ASSETS -->
+  <g transform="translate(670, 90)" filter="url(#shadow)">
+    <rect width="250" height="220" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 240 0 Q 250 0 250 10 L 250 42 L 0 42 Z" fill="url(#headerAssets)"/>
+    <text x="125" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">assets</text>
+    <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
+      <text y="0" font-weight="700" fill="#22d3ee">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
+      <text y="28">symbol <tspan fill="#94a3b8">VARCHAR(20) UQ</tspan></text>
+      <text y="56">name <tspan fill="#94a3b8">VARCHAR(50)</tspan></text>
+      <text y="84">last_d1_close <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="112">last_updated <tspan fill="#94a3b8">DATETIME</tspan></text>
+    </g>
+  </g>
+
+  <!-- TABLE 4: PRICE_ALERTS (CENTRAL JUNCTION / TRANSACTION ENTITY) -->
+  <g transform="translate(345, 230)" filter="url(#shadow)">
+    <rect width="270" height="300" rx="10" fill="#1e293b" stroke="#f59e0b" stroke-width="2"/>
+    <path d="M 0 10 Q 0 0 10 0 L 260 0 Q 270 0 270 10 L 270 42 L 0 42 Z" fill="url(#headerAlerts)"/>
+    <text x="135" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">price_alerts</text>
+    <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
+      <text y="0" font-weight="700" fill="#fbbf24">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
+      <text y="28" font-weight="600" fill="#60a5fa">user_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="56" font-weight="600" fill="#22d3ee">asset_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="84" font-weight="600" fill="#a78bfa">exchange_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="112">target_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="140">condition_type <tspan fill="#94a3b8">VARCHAR(10)</tspan></text>
+      <text y="168">is_triggered <tspan fill="#94a3b8">BOOLEAN (T/F)</tspan></text>
+      <text y="196">created_at <tspan fill="#94a3b8">DATETIME</tspan></text>
+    </g>
+  </g>
+
+  <!-- RELATIONSHIP PATHS WITH CROW'S FOOT NOTATION -->
+  <!-- 1. users (1) to price_alerts (M) -->
+  <path d="M 290 185 L 345 285" fill="none" stroke="#60a5fa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="325" y="225" fill="#93c5fd" font-size="11" font-weight="600">creates (1:N)</text>
+
+  <!-- 2. exchanges (1) to price_alerts (M) -->
+  <path d="M 290 450 L 345 420" fill="none" stroke="#a78bfa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="290" y="420" fill="#c4b5fd" font-size="11" font-weight="600">priced_on (1:N)</text>
+
+  <!-- 3. assets (1) to price_alerts (M) -->
+  <path d="M 670 200 L 615 310" fill="none" stroke="#22d3ee" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="635" y="245" fill="#67e8f9" font-size="11" font-weight="600">monitored_in (1:N)</text>
+
+  <!-- FOOTER -->
+  <text x="480" y="590" text-anchor="middle" fill="#64748b" font-size="11">Generated for BELLS Course Assessment Submission • CICO / Crypto Daily Alerts</text>
+</svg>

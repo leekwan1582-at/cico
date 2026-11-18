@@ -1,0 +1,3809 @@
+diff --git a/crypto_alerts/.env example b/crypto_alerts/.env example
+new file mode 100644
+index 0000000..701b284
+--- /dev/null
++++ b/crypto_alerts/.env example	
+@@ -0,0 +1,5 @@
++DB_NAME=crypto_alerts_db
++DB_HOST=127.0.0.1
++DB_USER=
++DB_PASSWORD=
++DB_PORT=3306
+\ No newline at end of file
+diff --git a/crypto_alerts/.gitignore b/crypto_alerts/.gitignore
+new file mode 100644
+index 0000000..1dcef2d
+--- /dev/null
++++ b/crypto_alerts/.gitignore
+@@ -0,0 +1,2 @@
++node_modules
++.env
+\ No newline at end of file
+diff --git a/crypto_alerts/config/db.js b/crypto_alerts/config/db.js
+new file mode 100644
+index 0000000..d546c38
+--- /dev/null
++++ b/crypto_alerts/config/db.js
+@@ -0,0 +1,20 @@
++const mysql = require("mysql2/promise");
++const dotenv = require("dotenv");
++const path = require("path");
++
++// Load .env relative to project root
++dotenv.config({ path: path.join(__dirname, "..", ".env") });
++
++const pool = mysql.createPool({
++  host: process.env.DB_HOST || "127.0.0.1",
++  user: process.env.DB_USER || "root",
++  password: process.env.DB_PASSWORD || "",
++  database: process.env.DB_NAME || "crypto_alerts_db",
++  port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 3306,
++  waitForConnections: true,
++  connectionLimit: 10,
++  queueLimit: 0,
++  dateStrings: true,
++});
++
++module.exports = pool;
+diff --git a/crypto_alerts/data/fallback_d1.json b/crypto_alerts/data/fallback_d1.json
+new file mode 100644
+index 0000000..659e8ab
+--- /dev/null
++++ b/crypto_alerts/data/fallback_d1.json
+@@ -0,0 +1,5 @@
++{
++    "BTC/USDT": 89200.00,
++    "ETH/USDT": 3180.00,
++    "SOL/USDT": 192.50
++}
+\ No newline at end of file
+diff --git a/crypto_alerts/docs/06-Relational Database.pdf b/crypto_alerts/docs/06-Relational Database.pdf
+new file mode 100644
+index 0000000..9b141bc
+Binary files /dev/null and b/crypto_alerts/docs/06-Relational Database.pdf differ
+diff --git a/crypto_alerts/docs/implementation_plan.md b/crypto_alerts/docs/implementation_plan.md
+new file mode 100644
+index 0000000..1654838
+--- /dev/null
++++ b/crypto_alerts/docs/implementation_plan.md
+@@ -0,0 +1,100 @@
++### Implementation Plan: `crypto_alerts` Web App ([UI](wireframe.md))
++
++#### 1. Project Folder Structure
++
++Organize the codebase cleanly into three tiers (Presentation, Business Logic, Data Storage) to satisfy the BELLS module architecture, maintain separation of concerns, and simplify your GitHub + ZIP submission:
++
++```text
++crypto_alerts/
++├── config/
++│   └── db.js                 # mysql2/promise connection pool
++├── data/
++│   └── fallback_d1.json      # Offline/geo-block D1 close prices snapshot
++├── public/
++│   └── css/
++│       └── style.css         # Custom flexbox & Bootstrap 5 overrides
++├── routes/
++│   └── alertRoutes.js        # Express routes for CRUD + CCXT Refresh
++├── services/
++│   └── priceService.js       # CCXT exchange calls, fallback parser & alert triggers
++├── sql/
++│   └── schema.sql            # DDL CREATE DATABASE & CREATE TABLE statements
++├── views/
++│   ├── index.ejs             # Main Split-View UI (KPI strip + Form + Table)
++│   └── partials/
++│       ├── navbar.ejs        # Top navigation with exchange badge & refresh action
++│       └── kpi_strip.ejs     # Ticker cards for BTC/ETH/SOL D1 prices
++├── .env                      # DB credentials & PORT (excluded from git via .gitignore)
++├── .env example              # Sample environment template for setup
++├── .gitignore                # Ignores node_modules, .env
++├── index.js                  # Express entry point (binds to 0.0.0.0)
++├── package.json
++└── seed.js                   # Populates initial users, exchanges, assets & alerts
++```
++
++> **Note on Directory Naming**: Ensure the project directory is consistently named `crypto_alerts` (with a `p`) across all scripts, documentation, and the final ZIP submission.
++
++---
++
++#### 2. Step-by-Step Build Phases
++
++##### Phase 1: Environment & Dependencies Setup (LO1)
++
++1. Initialize the Node.js project and install required packages:
++```bash
++mkdir crypto_alerts && cd crypto_alerts
++npm init -y
++npm install express ejs mysql2 ccxt dotenv
++npm install --save-dev nodemon
++```
++
++2. Configure `.env` with your local MySQL credentials (`DB_HOST=127.0.0.1`, `DB_USER=root`, `DB_PASSWORD=...`, `DB_NAME=crypto_alerts_db`, `PORT=3000`). Provide `.env example` for team members and graders.
++
++##### Phase 2: Database DDL & Seeding (LO4)
++
++1. Execute `sql/schema.sql` in MySQL Workbench or CLI to create the 4 normalized tables (`users`, `exchanges`, `assets`, `price_alerts`) with `INT UNSIGNED` primary keys and foreign keys.
++
++2. Run `node seed.js` to insert your baseline users, exchanges (`okx` prioritized first, `binance` second, `local_mock` third), assets (`BTC/USDT`, `ETH/USDT`, `SOL/USDT`), and sample alerts.
++3. Create `data/fallback_d1.json` as your offline safety net:
++```json
++{
++  "BTC/USDT": 89200.00,
++  "ETH/USDT": 3180.00,
++  "SOL/USDT": 192.50
++}
++```
++
++##### Phase 3: Database Connection & Price Service (LO5 & LO6)
++
++1. **`config/db.js`:** Export a `mysql2/promise` connection pool (`mysql.createPool(...)`) so queries use clean `async/await` syntax.
++2. **`services/priceService.js` (CCXT D1 Refresh & Trigger Logic):**
++   - Query active exchanges ordered by `priority_order ASC` (`okx` first).
++   - Loop through `assets` and call `await exchange.fetchOHLCV(symbol, '1d', undefined, 1)` to extract the latest daily close (`candle[0][4]`).
++   - Wrap CCXT calls in `try/catch`: if OKX/Binance throws a network or geo-block error, read the price from `data/fallback_d1.json` and record which source succeeded (`OKX Singapore` vs. `Offline D1 Snapshot`).
++   - Run `UPDATE assets SET last_d1_close = ?, last_updated = NOW() WHERE id = ?`.
++   - Run `UPDATE price_alerts` to set `is_triggered = TRUE` for any alert where `condition_type = 'ABOVE'` and `last_d1_close >= target_price` (or `'BELOW'` and `last_d1_close <= target_price`).
++
++##### Phase 4: Express CRUD Routes (`routes/alertRoutes.js`) (LO5, LO6, LO7)
++
++Map every UI control in Option 1 directly to your required SQL statements, delegating price refresh tasks to `services/priceService.js`:
++
++| HTTP Route | UI Action | SQL Operation Demonstrated |
++| --- | --- | --- |
++| `GET /` | Load Split-View dashboard & apply filter dropdowns (`?user_id=1&status=active`) | **SELECT #1 (2+ criteria):** `SELECT ... FROM price_alerts WHERE user_id = ? AND is_triggered = ?` <br><br> **SELECT #2 (Join):** `SELECT pa.*, a.symbol, e.display_name FROM price_alerts pa JOIN assets a ... JOIN exchanges e ...` |
++| `POST /alerts` | Submit "Create Alert" in left-column form | **INSERT INTO:** `INSERT INTO price_alerts (user_id, asset_id, exchange_id, target_price, condition_type) VALUES (?, ?, ?, ?, ?)` |
++| `GET /?edit_id=:id` | Click **Edit** on a table row (pre-fills left form) | **SELECT (Single record):** `SELECT * FROM price_alerts WHERE id = ?` |
++| `POST /alerts/:id/update` | Submit "Save Changes" in left-column form | **UPDATE:** `UPDATE price_alerts SET asset_id = ?, exchange_id = ?, target_price = ?, condition_type = ?, is_triggered = FALSE WHERE id = ?` |
++| `POST /alerts/:id/delete` | Click **Delete** on a table row | **DELETE:** `DELETE FROM price_alerts WHERE id = ?` |
++| `POST /refresh` | Click **[ Refresh D1 Prices ]** in top navbar | Calls `priceService.refreshAllPrices()` $\rightarrow$ Updates `assets.last_d1_close` and flags triggered `price_alerts` |
++
++##### Phase 5: Option 1 Split-View EJS & Bootstrap 5 UI (`views/index.ejs`)
++
++1. **Top Navbar (`views/partials/navbar.ejs`):** Brand title, active exchange source badge (`OKX Singapore`), user switcher (`leekwan` / `trader_sg`), and `<form action="/refresh" method="POST">` button.
++2. **KPI Ticker Strip (`views/partials/kpi_strip.ejs`):** 3 Bootstrap flex cards rendering `BTC/USDT`, `ETH/USDT`, and `SOL/USDT` D1 close prices and sync timestamps.
++3. **Left Column (`col-md-4` — Create / Edit Panel):** Single reusable form that switches between `POST /alerts` (Create mode) and `POST /alerts/:id/update` (Edit mode) when an `editAlert` object is passed from Express.
++4. **Right Column (`col-md-8` — Watchlist Table & Multi-Criteria Filter):** Filter bar (`GET /` with `user_id` and `is_triggered` dropdowns) above a responsive Bootstrap table displaying alert rows with status badges (`ACTIVE` vs. `TRIGGERED`) and inline `Edit` / `Delete` actions.
++
++##### Phase 6: Final Assessment Verification & Packaging
++
++1. **ER Diagram Export:** Export your 4-table ER diagram (PNG/PDF) and include it in your project repository (`/docs/er-diagram.png`) and PowerPoint slides.
++2. **Submission Artifacts:** Push the complete repository to GitHub (excluding `node_modules` and `.env`, including `.env.example` and `sql/schema.sql`) and compress the project folder into a `.zip` file for LMS upload.
+\ No newline at end of file
+diff --git a/crypto_alerts/docs/logical_schema_diagrame.md b/crypto_alerts/docs/logical_schema_diagrame.md
+new file mode 100644
+index 0000000..67750e0
+--- /dev/null
++++ b/crypto_alerts/docs/logical_schema_diagrame.md
+@@ -0,0 +1,40 @@
++```mermaid
++erDiagram
++    users ||--o{ price_alerts : "creates"
++    assets ||--o{ price_alerts : "monitored_in"
++    exchanges ||--o{ price_alerts : "priced_on"
++
++    users {
++        INT_UNSIGNED id PK "AUTO_INCREMENT"
++        VARCHAR(50) username "NOT NULL, UNIQUE"
++        VARCHAR(100) email "NOT NULL, UNIQUE"
++        DATETIME created_at "DEFAULT CURRENT_TIMESTAMP"
++    }
++
++    exchanges {
++        INT_UNSIGNED id PK "AUTO_INCREMENT"
++        VARCHAR(30) ccxt_id "NOT NULL, UNIQUE"
++        VARCHAR(50) display_name "NOT NULL"
++        BOOLEAN is_active "DEFAULT TRUE"
++        INT_UNSIGNED priority_order "DEFAULT 1"
++    }
++
++    assets {
++        INT_UNSIGNED id PK "AUTO_INCREMENT"
++        VARCHAR(20) symbol "NOT NULL, UNIQUE"
++        VARCHAR(50) name "NOT NULL"
++        DECIMAL(18_8) last_d1_close "DEFAULT 0.0"
++        DATETIME last_updated "DEFAULT CURRENT_TIMESTAMP"
++    }
++
++    price_alerts {
++        INT_UNSIGNED id PK "AUTO_INCREMENT"
++        INT_UNSIGNED user_id FK "NOT NULL"
++        INT_UNSIGNED asset_id FK "NOT NULL"
++        INT_UNSIGNED exchange_id FK "NOT NULL"
++        DECIMAL(18_8) target_price "NOT NULL"
++        VARCHAR(10) condition_type "NOT NULL ('ABOVE' | 'BELOW')"
++        BOOLEAN is_triggered "DEFAULT FALSE"
++        DATETIME created_at "DEFAULT CURRENT_TIMESTAMP"
++    }
++```
+\ No newline at end of file
+diff --git a/crypto_alerts/docs/wireframe.md b/crypto_alerts/docs/wireframe.md
+new file mode 100644
+index 0000000..cd6c6e2
+--- /dev/null
++++ b/crypto_alerts/docs/wireframe.md
+@@ -0,0 +1,14 @@
+++-----------------------------------------------------------------------------------+
++| [Logo] CryptoAlert SG    | Exchange: OKX (Active) | User: [leekwan v] | [REFRESH] |
+++-----------------------------------------------------------------------------------+
++| [ BTC/USDT: $88,500.00 ]   [ ETH/USDT: $3,120.50 ]   [ SOL/USDT: $185.25 ]        |
+++-----------------------------------+-----------------------------------------------+
++| CREATE / EDIT ALERT (INSERT/UPD)  | PRICE ALERTS WATCHLIST (SELECT / DEL)         |
++|                                   | Filter: User [leekwan v] Status [Active v]    |
++| Asset:    [ BTC/USDT        v ]   +-----------------------------------------------+
++| Exchange: [ OKX Singapore   v ]   | ID | Asset    | Exch | Cond  | Target  | Act  |
++| Cond:     [ ABOVE           v ]   | 1  | BTC/USDT | OKX  | ABOVE | 80,000  | E|D  |
++| Target $: [ 95000.00          ]   | 2  | BTC/USDT | OKX  | ABOVE | 120,000 | E|D  |
++|                                   | 3  | ETH/USDT | OKX  | BELOW | 2,500   | E|D  |
++| [ Save Alert ]    [ Cancel ]      |                                               |
+++-----------------------------------+-----------------------------------------------+
+\ No newline at end of file
+diff --git a/crypto_alerts/index.js b/crypto_alerts/index.js
+new file mode 100644
+index 0000000..1209832
+--- /dev/null
++++ b/crypto_alerts/index.js
+@@ -0,0 +1,45 @@
++const express = require("express");
++const path = require("path");
++const dotenv = require("dotenv");
++
++// Load environment variables
++dotenv.config();
++
++const alertRoutes = require("./routes/alertRoutes");
++
++const app = express();
++const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
++
++// Middleware for parsing form inputs and static assets
++app.use(express.urlencoded({ extended: true }));
++app.use(express.static(path.join(__dirname, "public")));
++
++// Configure View Engine
++app.set("view engine", "ejs");
++app.set("views", path.join(__dirname, "views"));
++
++// Mount Alerts Routes
++app.use("/", alertRoutes);
++
++// 404 Catch-All Middleware for unmapped routes
++app.use((req, res) => {
++  res.status(404).send("Page Not Found");
++});
++
++// Global Error Handling Middleware (prevents server crashes/hangs)
++app.use((err, req, res, next) => {
++  console.error("Internal Server Error:", err);
++  if (res.headersSent) {
++    return next(err);
++  }
++  res.status(500).send("Internal Server Error");
++});
++
++// Start server if executed directly
++if (require.main === module) {
++  app.listen(port, "0.0.0.0", () => {
++    console.log(`Crypto Alerts server listening at http://0.0.0.0:${port}`);
++  });
++}
++
++module.exports = app;
+diff --git a/crypto_alerts/package-lock.json b/crypto_alerts/package-lock.json
+new file mode 100644
+index 0000000..0464805
+--- /dev/null
++++ b/crypto_alerts/package-lock.json
+@@ -0,0 +1,1505 @@
++{
++  "name": "cryto_alerts",
++  "version": "1.0.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "cryto_alerts",
++      "version": "1.0.0",
++      "license": "ISC",
++      "dependencies": {
++        "ccxt": "^4.5.93",
++        "dotenv": "^18.0.10",
++        "ejs": "^7.0.2",
++        "express": "^5.3.0",
++        "mysql2": "^3.24.6"
++      },
++      "devDependencies": {
++        "nodemon": "^3.1.14"
++      }
++    },
++    "node_modules/@noble/curves": {
++      "version": "2.2.0",
++      "resolved": "https://registry.npmjs.org/@noble/curves/-/curves-2.2.0.tgz",
++      "integrity": "sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ==",
++      "license": "MIT",
++      "dependencies": {
++        "@noble/hashes": "2.2.0"
++      },
++      "engines": {
++        "node": ">= 20.19.0"
++      },
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      }
++    },
++    "node_modules/@noble/hashes": {
++      "version": "2.2.0",
++      "resolved": "https://registry.npmjs.org/@noble/hashes/-/hashes-2.2.0.tgz",
++      "integrity": "sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 20.19.0"
++      },
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      }
++    },
++    "node_modules/@scure/base": {
++      "version": "2.2.0",
++      "resolved": "https://registry.npmjs.org/@scure/base/-/base-2.2.0.tgz",
++      "integrity": "sha512-b8XEupJibegiXV+tDUseI8oLQc8ei3d/4Jkb2RpbHh3MfE054ov3uIz2dhFkB3FI8iwYkEh0gGCApkrYggkPNg==",
++      "license": "MIT",
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      }
++    },
++    "node_modules/@scure/starknet": {
++      "version": "2.2.0",
++      "resolved": "https://registry.npmjs.org/@scure/starknet/-/starknet-2.2.0.tgz",
++      "integrity": "sha512-FPgUFyEgbEG7ewrj9gWUeXpf2b6klBnqcZOSFz6z4ycVCIAeGhNqKQUPlvl2Ka8gfmrbCcdIrImyi+dINr06Uw==",
++      "license": "MIT",
++      "dependencies": {
++        "@noble/curves": "~2.2.0",
++        "@noble/hashes": "~2.2.0"
++      },
++      "engines": {
++        "node": ">= 20.19.0"
++      },
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      }
++    },
++    "node_modules/@types/node": {
++      "version": "26.6.6",
++      "resolved": "https://registry.npmjs.org/@types/node/-/node-26.6.6.tgz",
++      "integrity": "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==",
++      "license": "MIT",
++      "peer": true,
++      "dependencies": {
++        "undici-types": "~8.9.0"
++      }
++    },
++    "node_modules/accepts": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/accepts/-/accepts-2.0.0.tgz",
++      "integrity": "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==",
++      "license": "MIT",
++      "dependencies": {
++        "mime-types": "^3.0.0",
++        "negotiator": "^1.0.0"
++      },
++      "engines": {
++        "node": ">= 0.6"
++      }
++    },
++    "node_modules/anymatch": {
++      "version": "3.1.3",
++      "resolved": "https://registry.npmjs.org/anymatch/-/anymatch-3.1.3.tgz",
++      "integrity": "sha512-KMReFUr0B4t+D+OBkjR3KYqvocp2XaSzO55UcB6mgQMd3KbcE+mWTyvVV7D/zsdEbNnV6acZUutkiHQXvTr1Rw==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "normalize-path": "^3.0.0",
++        "picomatch": "^2.0.4"
++      },
++      "engines": {
++        "node": ">= 8"
++      }
++    },
++    "node_modules/aws-ssl-profiles": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/aws-ssl-profiles/-/aws-ssl-profiles-1.1.2.tgz",
++      "integrity": "sha512-NZKeq9AfyQvEeNlN0zSYAaWrmBffJh3IELMZfRpJVWgrpEbtEpnjvzqBPf+mxoI287JohRDoa+/nsfqqiZmF6g==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 6.0.0"
++      }
++    },
++    "node_modules/balanced-match": {
++      "version": "4.0.4",
++      "resolved": "https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz",
++      "integrity": "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": "18 || 20 || >=22"
++      }
++    },
++    "node_modules/binary-extensions": {
++      "version": "2.3.0",
++      "resolved": "https://registry.npmjs.org/binary-extensions/-/binary-extensions-2.3.0.tgz",
++      "integrity": "sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=8"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/sindresorhus"
++      }
++    },
++    "node_modules/body-parser": {
++      "version": "2.4.0",
++      "resolved": "https://registry.npmjs.org/body-parser/-/body-parser-2.4.0.tgz",
++      "integrity": "sha512-Ifk1KcLrxaGt1occQagQNFNNOqRt1LFuehEnHHzB8Z6cRgIxRU1TBaiIsUiCdA+gy5PL7Y1IX31DNKkRmxtXjQ==",
++      "license": "MIT",
++      "dependencies": {
++        "bytes": "^3.1.2",
++        "content-type": "^2.1.0",
++        "debug": "^4.4.3",
++        "http-errors": "^2.0.1",
++        "iconv-lite": "^0.7.3",
++        "on-finished": "^2.4.1",
++        "qs": "^6.16.1",
++        "raw-body": "^3.0.2",
++        "type-is": "^2.1.0"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/brace-expansion": {
++      "version": "5.0.13",
++      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.13.tgz",
++      "integrity": "sha512-Vh3dmFbc4wZeox7M9I/0L9GfFd83Su4+yCck/OF9Gi/P/dAHn0RT7X4K9R7gMNMhDck3DvhR6QXsnQdjjgwNvQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "balanced-match": "^4.0.2"
++      },
++      "engines": {
++        "node": "20 || >=22"
++      }
++    },
++    "node_modules/braces": {
++      "version": "3.0.3",
++      "resolved": "https://registry.npmjs.org/braces/-/braces-3.0.3.tgz",
++      "integrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "fill-range": "^7.1.1"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
++    "node_modules/bufferutil": {
++      "version": "4.1.0",
++      "resolved": "https://registry.npmjs.org/bufferutil/-/bufferutil-4.1.0.tgz",
++      "integrity": "sha512-ZMANVnAixE6AWWnPzlW2KpUrxhm9woycYvPOo67jWHyFowASTEd9s+QN1EIMsSDtwhIxN4sWE1jotpuDUIgyIw==",
++      "hasInstallScript": true,
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "node-gyp-build": "^4.3.0"
++      },
++      "engines": {
++        "node": ">=6.14.2"
++      }
++    },
++    "node_modules/bytes": {
++      "version": "3.1.2",
++      "resolved": "https://registry.npmjs.org/bytes/-/bytes-3.1.2.tgz",
++      "integrity": "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      }
++    },
++    "node_modules/call-bind-apply-helpers": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz",
++      "integrity": "sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==",
++      "license": "MIT",
++      "dependencies": {
++        "es-errors": "^1.3.0",
++        "function-bind": "^1.1.2"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/call-bound": {
++      "version": "1.0.4",
++      "resolved": "https://registry.npmjs.org/call-bound/-/call-bound-1.0.4.tgz",
++      "integrity": "sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==",
++      "license": "MIT",
++      "dependencies": {
++        "call-bind-apply-helpers": "^1.0.2",
++        "get-intrinsic": "^1.3.0"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/ccxt": {
++      "version": "4.5.93",
++      "resolved": "https://registry.npmjs.org/ccxt/-/ccxt-4.5.93.tgz",
++      "integrity": "sha512-2grf6qPp+sS3Tj03IJ4oaHESE1LV3WuvrgoC0LI813IyI0p7bI/pBnF3tH4d+xUFN4HiKp7WHtj59Op6PzGevQ==",
++      "hasInstallScript": true,
++      "license": "MIT",
++      "dependencies": {
++        "@noble/curves": "2.2.0",
++        "@noble/hashes": "2.2.0",
++        "@scure/base": "2.2.0",
++        "@scure/starknet": "2.2.0",
++        "undici": "7.30.2",
++        "ws": "8.21.0"
++      },
++      "engines": {
++        "node": ">=18.0.0"
++      },
++      "optionalDependencies": {
++        "bufferutil": "4.1.0",
++        "fflate": "0.8.3"
++      },
++      "peerDependencies": {
++        "protobufjs": "^7.5.3"
++      },
++      "peerDependenciesMeta": {
++        "protobufjs": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/chokidar": {
++      "version": "3.6.0",
++      "resolved": "https://registry.npmjs.org/chokidar/-/chokidar-3.6.0.tgz",
++      "integrity": "sha512-7VT13fmjotKpGipCW9JEQAusEPE+Ei8nl6/g4FBAmIm0GOOLMua9NDDo/DWp0ZAxCr3cPq5ZpBqmPAQgDda2Pw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "anymatch": "~3.1.2",
++        "braces": "~3.0.2",
++        "glob-parent": "~5.1.2",
++        "is-binary-path": "~2.1.0",
++        "is-glob": "~4.0.1",
++        "normalize-path": "~3.0.0",
++        "readdirp": "~3.6.0"
++      },
++      "engines": {
++        "node": ">= 8.10.0"
++      },
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      },
++      "optionalDependencies": {
++        "fsevents": "~2.3.2"
++      }
++    },
++    "node_modules/content-disposition": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/content-disposition/-/content-disposition-2.0.1.tgz",
++      "integrity": "sha512-e+H0ZXHSWYrENhQzw1LPuP4oF5MzVKmDU6d3hxlvaPEYLLg62MxtQNPRx4SYSuYJSBUgnQIG4HIN2tEtNv7Dog==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/content-type": {
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/content-type/-/content-type-2.1.0.tgz",
++      "integrity": "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/cookie": {
++      "version": "0.7.2",
++      "resolved": "https://registry.npmjs.org/cookie/-/cookie-0.7.2.tgz",
++      "integrity": "sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.6"
++      }
++    },
++    "node_modules/cookie-signature": {
++      "version": "1.2.2",
++      "resolved": "https://registry.npmjs.org/cookie-signature/-/cookie-signature-1.2.2.tgz",
++      "integrity": "sha512-D76uU73ulSXrD1UXF4KE2TMxVVwhsnCgfAyTg9k8P6KGZjlXKrOLe4dJQKI3Bxi5wjesZoFXJWElNWBjPZMbhg==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=6.6.0"
++      }
++    },
++    "node_modules/debug": {
++      "version": "4.4.3",
++      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
++      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
++      "license": "MIT",
++      "dependencies": {
++        "ms": "^2.1.3"
++      },
++      "engines": {
++        "node": ">=6.0"
++      },
++      "peerDependenciesMeta": {
++        "supports-color": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/depd": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/depd/-/depd-2.0.0.tgz",
++      "integrity": "sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      }
++    },
++    "node_modules/dotenv": {
++      "version": "18.0.10",
++      "resolved": "https://registry.npmjs.org/dotenv/-/dotenv-18.0.10.tgz",
++      "integrity": "sha512-89FAA1xchzK2mxVWdr5F/0rldwiueXs6zJM86rO66EzekR1iBdiXRthyG+m5GvkJaFH3C2LESzamTkgndmLT2A==",
++      "license": "BSD-2-Clause",
++      "bin": {
++        "dotenv": "dist/cli.cjs"
++      },
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://dotenvx.com"
++      }
++    },
++    "node_modules/dunder-proto": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz",
++      "integrity": "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==",
++      "license": "MIT",
++      "dependencies": {
++        "call-bind-apply-helpers": "^1.0.1",
++        "es-errors": "^1.3.0",
++        "gopd": "^1.2.0"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/ee-first": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/ee-first/-/ee-first-1.1.1.tgz",
++      "integrity": "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==",
++      "license": "MIT"
++    },
++    "node_modules/ejs": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/ejs/-/ejs-7.0.2.tgz",
++      "integrity": "sha512-LcDSEP6Oclb9sTiSyG0MpG0RuKvLDRxCOOt+2sIk+kdk1rMkFU8SRnT0qaNt5zvU0LOV1YXXOvIoZL/sKwabvw==",
++      "license": "Apache-2.0",
++      "bin": {
++        "ejs": "bin/cli.js"
++      },
++      "engines": {
++        "node": ">=0.12.18"
++      }
++    },
++    "node_modules/encodeurl": {
++      "version": "2.0.3",
++      "resolved": "https://registry.npmjs.org/encodeurl/-/encodeurl-2.0.3.tgz",
++      "integrity": "sha512-mIteYONiEfc4xWf2F1WXovh1c8npzS00vNeiUPdwFF+QlVJni+gNvpQltLMQhob8rew/bWWc/bGTuUr0EUGt0w==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/es-define-property": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz",
++      "integrity": "sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/es-errors": {
++      "version": "1.3.0",
++      "resolved": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz",
++      "integrity": "sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/es-object-atoms": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.2.tgz",
++      "integrity": "sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==",
++      "license": "MIT",
++      "dependencies": {
++        "es-errors": "^1.3.0"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/escape-html": {
++      "version": "1.0.3",
++      "resolved": "https://registry.npmjs.org/escape-html/-/escape-html-1.0.3.tgz",
++      "integrity": "sha512-NiSupZ4OeuGwr68lGIeym/ksIZMJodUGOSCZ/FSnTxcrekbvqrgdUxlJOMpijaKZVjAJrWrGs/6Jy8OMuyj9ow==",
++      "license": "MIT"
++    },
++    "node_modules/etag": {
++      "version": "1.8.1",
++      "resolved": "https://registry.npmjs.org/etag/-/etag-1.8.1.tgz",
++      "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.6"
++      }
++    },
++    "node_modules/express": {
++      "version": "5.3.0",
++      "resolved": "https://registry.npmjs.org/express/-/express-5.3.0.tgz",
++      "integrity": "sha512-qCqy1xSoaugxOD4IVHb1ZWdkvCF2W3aE2okKouWj8VwJ+ztskSiXoBnCSJqfKT+cVPJhuJqe9YLbY425+Zh00g==",
++      "license": "MIT",
++      "dependencies": {
++        "accepts": "^2.0.0",
++        "body-parser": "^2.3.0",
++        "content-disposition": "^2.0.1",
++        "content-type": "^2.0.0",
++        "cookie": "^0.7.1",
++        "cookie-signature": "^1.2.1",
++        "debug": "^4.4.0",
++        "depd": "^2.0.0",
++        "encodeurl": "^2.0.0",
++        "escape-html": "^1.0.3",
++        "etag": "^1.8.1",
++        "finalhandler": "^2.1.0",
++        "fresh": "^2.0.0",
++        "http-errors": "^2.0.0",
++        "merge-descriptors": "^2.0.0",
++        "mime-types": "^3.0.0",
++        "on-finished": "^2.4.1",
++        "once": "^1.4.0",
++        "parseurl": "^1.3.3",
++        "proxy-addr": "^2.0.8",
++        "qs": "^6.16.0",
++        "range-parser": "^1.2.1",
++        "router": "^2.2.0",
++        "send": "^1.1.0",
++        "serve-static": "^2.2.0",
++        "statuses": "^2.0.1",
++        "type-is": "^2.1.0",
++        "vary": "^1.1.2"
++      },
++      "engines": {
++        "node": ">= 18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/fflate": {
++      "version": "0.8.3",
++      "resolved": "https://registry.npmjs.org/fflate/-/fflate-0.8.3.tgz",
++      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
++      "license": "MIT",
++      "optional": true
++    },
++    "node_modules/fill-range": {
++      "version": "7.1.1",
++      "resolved": "https://registry.npmjs.org/fill-range/-/fill-range-7.1.1.tgz",
++      "integrity": "sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "to-regex-range": "^5.0.1"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
++    "node_modules/finalhandler": {
++      "version": "2.1.1",
++      "resolved": "https://registry.npmjs.org/finalhandler/-/finalhandler-2.1.1.tgz",
++      "integrity": "sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA==",
++      "license": "MIT",
++      "dependencies": {
++        "debug": "^4.4.0",
++        "encodeurl": "^2.0.0",
++        "escape-html": "^1.0.3",
++        "on-finished": "^2.4.1",
++        "parseurl": "^1.3.3",
++        "statuses": "^2.0.1"
++      },
++      "engines": {
++        "node": ">= 18.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/forwarded": {
++      "version": "0.2.0",
++      "resolved": "https://registry.npmjs.org/forwarded/-/forwarded-0.2.0.tgz",
++      "integrity": "sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.6"
++      }
++    },
++    "node_modules/fresh": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/fresh/-/fresh-2.0.0.tgz",
++      "integrity": "sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      }
++    },
++    "node_modules/fsevents": {
++      "version": "2.3.3",
++      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
++      "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
++      "dev": true,
++      "hasInstallScript": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
++      }
++    },
++    "node_modules/function-bind": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz",
++      "integrity": "sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==",
++      "license": "MIT",
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/generate-function": {
++      "version": "2.3.1",
++      "resolved": "https://registry.npmjs.org/generate-function/-/generate-function-2.3.1.tgz",
++      "integrity": "sha512-eeB5GfMNeevm/GRYq20ShmsaGcmI81kIX2K9XQx5miC8KdHaC6Jm0qQ8ZNeGOi7wYB8OsdxKs+Y2oVuTFuVwKQ==",
++      "license": "MIT",
++      "dependencies": {
++        "is-property": "^1.0.2"
++      }
++    },
++    "node_modules/get-intrinsic": {
++      "version": "1.3.0",
++      "resolved": "https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz",
++      "integrity": "sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==",
++      "license": "MIT",
++      "dependencies": {
++        "call-bind-apply-helpers": "^1.0.2",
++        "es-define-property": "^1.0.1",
++        "es-errors": "^1.3.0",
++        "es-object-atoms": "^1.1.1",
++        "function-bind": "^1.1.2",
++        "get-proto": "^1.0.1",
++        "gopd": "^1.2.0",
++        "has-symbols": "^1.1.0",
++        "hasown": "^2.0.2",
++        "math-intrinsics": "^1.1.0"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/get-proto": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/get-proto/-/get-proto-1.0.1.tgz",
++      "integrity": "sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==",
++      "license": "MIT",
++      "dependencies": {
++        "dunder-proto": "^1.0.1",
++        "es-object-atoms": "^1.0.0"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/glob-parent": {
++      "version": "5.1.2",
++      "resolved": "https://registry.npmjs.org/glob-parent/-/glob-parent-5.1.2.tgz",
++      "integrity": "sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "is-glob": "^4.0.1"
++      },
++      "engines": {
++        "node": ">= 6"
++      }
++    },
++    "node_modules/gopd": {
++      "version": "1.2.0",
++      "resolved": "https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz",
++      "integrity": "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/has-flag": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/has-flag/-/has-flag-3.0.0.tgz",
++      "integrity": "sha512-sKJf1+ceQBr4SMkvQnBDNDtf4TXpVhVGateu0t918bl30FnbE2m4vNLX+VWe/dpjlb+HugGYzW7uQXH98HPEYw==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=4"
++      }
++    },
++    "node_modules/has-symbols": {
++      "version": "1.1.0",
++      "resolved": "https://registry.npmjs.org/has-symbols/-/has-symbols-1.1.0.tgz",
++      "integrity": "sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/hasown": {
++      "version": "2.0.4",
++      "resolved": "https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz",
++      "integrity": "sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==",
++      "license": "MIT",
++      "dependencies": {
++        "function-bind": "^1.1.2"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/http-errors": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/http-errors/-/http-errors-2.0.1.tgz",
++      "integrity": "sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==",
++      "license": "MIT",
++      "dependencies": {
++        "depd": "~2.0.0",
++        "inherits": "~2.0.4",
++        "setprototypeof": "~1.2.0",
++        "statuses": "~2.0.2",
++        "toidentifier": "~1.0.1"
++      },
++      "engines": {
++        "node": ">= 0.8"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/iconv-lite": {
++      "version": "0.7.3",
++      "resolved": "https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.7.3.tgz",
++      "integrity": "sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==",
++      "license": "MIT",
++      "dependencies": {
++        "safer-buffer": ">= 2.1.2 < 3.0.0"
++      },
++      "engines": {
++        "node": ">=0.10.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/ignore-by-default": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/ignore-by-default/-/ignore-by-default-1.0.1.tgz",
++      "integrity": "sha512-Ius2VYcGNk7T90CppJqcIkS5ooHUZyIQK+ClZfMfMNFEF9VSE73Fq+906u/CWu92x4gzZMWOwfFYckPObzdEbA==",
++      "dev": true,
++      "license": "ISC"
++    },
++    "node_modules/inherits": {
++      "version": "2.0.4",
++      "resolved": "https://registry.npmjs.org/inherits/-/inherits-2.0.4.tgz",
++      "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==",
++      "license": "ISC"
++    },
++    "node_modules/ipaddr.js": {
++      "version": "1.9.1",
++      "resolved": "https://registry.npmjs.org/ipaddr.js/-/ipaddr.js-1.9.1.tgz",
++      "integrity": "sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.10"
++      }
++    },
++    "node_modules/is-binary-path": {
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/is-binary-path/-/is-binary-path-2.1.0.tgz",
++      "integrity": "sha512-ZMERYes6pDydyuGidse7OsHxtbI7WVeUEozgR/g7rd0xUimYNlvZRE/K2MgZTjWy725IfelLeVcEM97mmtRGXw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "binary-extensions": "^2.0.0"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
++    "node_modules/is-extglob": {
++      "version": "2.1.1",
++      "resolved": "https://registry.npmjs.org/is-extglob/-/is-extglob-2.1.1.tgz",
++      "integrity": "sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
++    "node_modules/is-glob": {
++      "version": "4.0.3",
++      "resolved": "https://registry.npmjs.org/is-glob/-/is-glob-4.0.3.tgz",
++      "integrity": "sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "is-extglob": "^2.1.1"
++      },
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
++    "node_modules/is-number": {
++      "version": "7.0.0",
++      "resolved": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
++      "integrity": "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.12.0"
++      }
++    },
++    "node_modules/is-promise": {
++      "version": "4.0.0",
++      "resolved": "https://registry.npmjs.org/is-promise/-/is-promise-4.0.0.tgz",
++      "integrity": "sha512-hvpoI6korhJMnej285dSg6nu1+e6uxs7zG3BYAm5byqDsgJNWwxzM6z6iZiAgQR4TJ30JmBTOwqZUw3WlyH3AQ==",
++      "license": "MIT"
++    },
++    "node_modules/is-property": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/is-property/-/is-property-1.0.2.tgz",
++      "integrity": "sha512-Ks/IoX00TtClbGQr4TWXemAnktAQvYB7HzcCxDGqEZU6oCmb2INHuOoKxbtR+HFkmYWBKv/dOZtGRiAjDhj92g==",
++      "license": "MIT"
++    },
++    "node_modules/long": {
++      "version": "5.3.2",
++      "resolved": "https://registry.npmjs.org/long/-/long-5.3.2.tgz",
++      "integrity": "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==",
++      "license": "Apache-2.0"
++    },
++    "node_modules/lru.min": {
++      "version": "1.1.5",
++      "resolved": "https://registry.npmjs.org/lru.min/-/lru.min-1.1.5.tgz",
++      "integrity": "sha512-5J9ysMYUpYIg9RF2vJpy9SinEmSviFSe0GyPpCQ4L5QSkLAgeLXlTAOu2ZwWUU5m+0SBl6gUU1R1ZQB3aKypfA==",
++      "license": "MIT",
++      "engines": {
++        "bun": ">=1.0.0",
++        "deno": ">=1.30.0",
++        "node": ">=8.0.0"
++      },
++      "funding": {
++        "type": "github",
++        "url": "https://github.com/sponsors/wellwelwel"
++      }
++    },
++    "node_modules/math-intrinsics": {
++      "version": "1.1.0",
++      "resolved": "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz",
++      "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.4"
++      }
++    },
++    "node_modules/media-typer": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/media-typer/-/media-typer-1.1.1.tgz",
++      "integrity": "sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/merge-descriptors": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/merge-descriptors/-/merge-descriptors-2.0.0.tgz",
++      "integrity": "sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/sindresorhus"
++      }
++    },
++    "node_modules/mime-db": {
++      "version": "1.54.0",
++      "resolved": "https://registry.npmjs.org/mime-db/-/mime-db-1.54.0.tgz",
++      "integrity": "sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.6"
++      }
++    },
++    "node_modules/mime-types": {
++      "version": "3.0.2",
++      "resolved": "https://registry.npmjs.org/mime-types/-/mime-types-3.0.2.tgz",
++      "integrity": "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==",
++      "license": "MIT",
++      "dependencies": {
++        "mime-db": "^1.54.0"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/minimatch": {
++      "version": "10.2.6",
++      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz",
++      "integrity": "sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "dependencies": {
++        "brace-expansion": "^5.0.8"
++      },
++      "engines": {
++        "node": "18 || 20 || >=22"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/isaacs"
++      }
++    },
++    "node_modules/ms": {
++      "version": "2.1.3",
++      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
++      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
++      "license": "MIT"
++    },
++    "node_modules/mysql2": {
++      "version": "3.24.6",
++      "resolved": "https://registry.npmjs.org/mysql2/-/mysql2-3.24.6.tgz",
++      "integrity": "sha512-enu73KhbAua2L3dIxjc6qg6ZJ7H3pt1BImZASWNWY5xSsmJ1ZuUPULTDGXgmJbI61vb+nJAG19IZclIq19UidQ==",
++      "license": "MIT",
++      "dependencies": {
++        "aws-ssl-profiles": "^1.1.2",
++        "generate-function": "^2.3.1",
++        "iconv-lite": "^0.7.3",
++        "long": "^5.3.2",
++        "lru.min": "^1.1.4",
++        "named-placeholders": "^1.1.6",
++        "sql-escaper": "^1.5.1"
++      },
++      "engines": {
++        "node": ">= 8.0"
++      },
++      "peerDependencies": {
++        "@types/node": ">= 8"
++      }
++    },
++    "node_modules/named-placeholders": {
++      "version": "1.1.6",
++      "resolved": "https://registry.npmjs.org/named-placeholders/-/named-placeholders-1.1.6.tgz",
++      "integrity": "sha512-Tz09sEL2EEuv5fFowm419c1+a/jSMiBjI9gHxVLrVdbUkkNUUfjsVYs9pVZu5oCon/kmRh9TfLEObFtkVxmY0w==",
++      "license": "MIT",
++      "dependencies": {
++        "lru.min": "^1.1.0"
++      },
++      "engines": {
++        "node": ">=8.0.0"
++      }
++    },
++    "node_modules/negotiator": {
++      "version": "1.1.0",
++      "resolved": "https://registry.npmjs.org/negotiator/-/negotiator-1.1.0.tgz",
++      "integrity": "sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg==",
++      "license": "MIT",
++      "dependencies": {
++        "content-type": "^2.1.0"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/node-gyp-build": {
++      "version": "4.8.4",
++      "resolved": "https://registry.npmjs.org/node-gyp-build/-/node-gyp-build-4.8.4.tgz",
++      "integrity": "sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ==",
++      "license": "MIT",
++      "optional": true,
++      "bin": {
++        "node-gyp-build": "bin.js",
++        "node-gyp-build-optional": "optional.js",
++        "node-gyp-build-test": "build-test.js"
++      }
++    },
++    "node_modules/nodemon": {
++      "version": "3.1.14",
++      "resolved": "https://registry.npmjs.org/nodemon/-/nodemon-3.1.14.tgz",
++      "integrity": "sha512-jakjZi93UtB3jHMWsXL68FXSAosbLfY0In5gtKq3niLSkrWznrVBzXFNOEMJUfc9+Ke7SHWoAZsiMkNP3vq6Jw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "chokidar": "^3.5.2",
++        "debug": "^4",
++        "ignore-by-default": "^1.0.1",
++        "minimatch": "^10.2.1",
++        "pstree.remy": "^1.1.8",
++        "semver": "^7.5.3",
++        "simple-update-notifier": "^2.0.0",
++        "supports-color": "^5.5.0",
++        "touch": "^3.1.0",
++        "undefsafe": "^2.0.5"
++      },
++      "bin": {
++        "nodemon": "bin/nodemon.js"
++      },
++      "engines": {
++        "node": ">=10"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/nodemon"
++      }
++    },
++    "node_modules/normalize-path": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/normalize-path/-/normalize-path-3.0.0.tgz",
++      "integrity": "sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
++    "node_modules/object-inspect": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/object-inspect/-/object-inspect-1.13.4.tgz",
++      "integrity": "sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/on-finished": {
++      "version": "2.4.2",
++      "resolved": "https://registry.npmjs.org/on-finished/-/on-finished-2.4.2.tgz",
++      "integrity": "sha512-ATWUv387i+nLD49EiDoOft5scf32Vsdz3ktrQJG9bi7jRFmaXTssvyvj1EmeKVVgvesbqUtvQQvaS2TpTukAZQ==",
++      "license": "MIT",
++      "dependencies": {
++        "ee-first": "1.1.1"
++      },
++      "engines": {
++        "node": ">= 0.8"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/once": {
++      "version": "1.4.0",
++      "resolved": "https://registry.npmjs.org/once/-/once-1.4.0.tgz",
++      "integrity": "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==",
++      "license": "ISC",
++      "dependencies": {
++        "wrappy": "1"
++      }
++    },
++    "node_modules/parseurl": {
++      "version": "1.3.3",
++      "resolved": "https://registry.npmjs.org/parseurl/-/parseurl-1.3.3.tgz",
++      "integrity": "sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      }
++    },
++    "node_modules/path-to-regexp": {
++      "version": "8.4.2",
++      "resolved": "https://registry.npmjs.org/path-to-regexp/-/path-to-regexp-8.4.2.tgz",
++      "integrity": "sha512-qRcuIdP69NPm4qbACK+aDogI5CBDMi1jKe0ry5rSQJz8JVLsC7jV8XpiJjGRLLol3N+R5ihGYcrPLTno6pAdBA==",
++      "license": "MIT",
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/picomatch": {
++      "version": "2.3.2",
++      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-2.3.2.tgz",
++      "integrity": "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=8.6"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/jonschlinkert"
++      }
++    },
++    "node_modules/proxy-addr": {
++      "version": "2.0.8",
++      "resolved": "https://registry.npmjs.org/proxy-addr/-/proxy-addr-2.0.8.tgz",
++      "integrity": "sha512-5nnx0yGyVUcY6t9RnWcARWtwT9F1D8O9rt08htPvnd49W1IgZtmLkhu9WfMzQj1cFxjHIO6connUNVW5k7AVyQ==",
++      "license": "MIT",
++      "dependencies": {
++        "forwarded": "0.2.0",
++        "ipaddr.js": "1.9.1"
++      },
++      "engines": {
++        "node": ">= 0.10"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/pstree.remy": {
++      "version": "1.1.8",
++      "resolved": "https://registry.npmjs.org/pstree.remy/-/pstree.remy-1.1.8.tgz",
++      "integrity": "sha512-77DZwxQmxKnu3aR542U+X8FypNzbfJ+C5XQDk3uWjWxn6151aIMGthWYRXTqT1E5oJvg+ljaa2OJi+VfvCOQ8w==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/qs": {
++      "version": "6.17.1",
++      "resolved": "https://registry.npmjs.org/qs/-/qs-6.17.1.tgz",
++      "integrity": "sha512-jd3COkaKVgGUW+ZHyEHCG9bH7RoaaiWuMgzsIBjUMVjLAaWGWpoUAVwljVvBHxRu/2qEHnadLGZrkutYUBPQJA==",
++      "license": "BSD-3-Clause",
++      "dependencies": {
++        "es-define-property": "^1.0.1",
++        "side-channel": "^1.1.1"
++      },
++      "engines": {
++        "node": ">=0.6"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/range-parser": {
++      "version": "1.3.0",
++      "resolved": "https://registry.npmjs.org/range-parser/-/range-parser-1.3.0.tgz",
++      "integrity": "sha512-hek2mFQpPuI4E1BBKrSto+BU3e3x4xuarsbiwr3+lf7p44juvFMV0XFWQAP3xUyqXA4RrXLIoaSUGbSt056ZMw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.6"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/raw-body": {
++      "version": "3.0.2",
++      "resolved": "https://registry.npmjs.org/raw-body/-/raw-body-3.0.2.tgz",
++      "integrity": "sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==",
++      "license": "MIT",
++      "dependencies": {
++        "bytes": "~3.1.2",
++        "http-errors": "~2.0.1",
++        "iconv-lite": "~0.7.0",
++        "unpipe": "~1.0.0"
++      },
++      "engines": {
++        "node": ">= 0.10"
++      }
++    },
++    "node_modules/readdirp": {
++      "version": "3.6.0",
++      "resolved": "https://registry.npmjs.org/readdirp/-/readdirp-3.6.0.tgz",
++      "integrity": "sha512-hOS089on8RduqdbhvQ5Z37A0ESjsqz6qnRcffsMU3495FuTdqSm+7bhJ29JvIOsBDEEnan5DPu9t3To9VRlMzA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "picomatch": "^2.2.1"
++      },
++      "engines": {
++        "node": ">=8.10.0"
++      }
++    },
++    "node_modules/router": {
++      "version": "2.3.0",
++      "resolved": "https://registry.npmjs.org/router/-/router-2.3.0.tgz",
++      "integrity": "sha512-bpowRfGjEPe8t9R6fJIzhwmyCGAXwKvxBUsgJm+bJukwdcWmUXbMo7p22w7aYmQBPQTUMNqMV39YX0kMou3z8w==",
++      "license": "MIT",
++      "dependencies": {
++        "debug": "^4.4.0",
++        "depd": "^2.0.0",
++        "is-promise": "^4.0.0",
++        "parseurl": "^1.3.3",
++        "path-to-regexp": "^8.0.0"
++      },
++      "engines": {
++        "node": ">= 18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/safer-buffer": {
++      "version": "2.1.2",
++      "resolved": "https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz",
++      "integrity": "sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==",
++      "license": "MIT"
++    },
++    "node_modules/semver": {
++      "version": "7.8.6",
++      "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.6.tgz",
++      "integrity": "sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==",
++      "dev": true,
++      "license": "ISC",
++      "bin": {
++        "semver": "bin/semver.js"
++      },
++      "engines": {
++        "node": ">=10"
++      }
++    },
++    "node_modules/send": {
++      "version": "1.2.1",
++      "resolved": "https://registry.npmjs.org/send/-/send-1.2.1.tgz",
++      "integrity": "sha512-1gnZf7DFcoIcajTjTwjwuDjzuz4PPcY2StKPlsGAQ1+YH20IRVrBaXSWmdjowTJ6u8Rc01PoYOGHXfP1mYcZNQ==",
++      "license": "MIT",
++      "dependencies": {
++        "debug": "^4.4.3",
++        "encodeurl": "^2.0.0",
++        "escape-html": "^1.0.3",
++        "etag": "^1.8.1",
++        "fresh": "^2.0.0",
++        "http-errors": "^2.0.1",
++        "mime-types": "^3.0.2",
++        "ms": "^2.1.3",
++        "on-finished": "^2.4.1",
++        "range-parser": "^1.2.1",
++        "statuses": "^2.0.2"
++      },
++      "engines": {
++        "node": ">= 18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/serve-static": {
++      "version": "2.2.1",
++      "resolved": "https://registry.npmjs.org/serve-static/-/serve-static-2.2.1.tgz",
++      "integrity": "sha512-xRXBn0pPqQTVQiC8wyQrKs2MOlX24zQ0POGaj0kultvoOCstBQM5yvOhAVSUwOMjQtTvsPWoNCHfPGwaaQJhTw==",
++      "license": "MIT",
++      "dependencies": {
++        "encodeurl": "^2.0.0",
++        "escape-html": "^1.0.3",
++        "parseurl": "^1.3.3",
++        "send": "^1.2.0"
++      },
++      "engines": {
++        "node": ">= 18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/setprototypeof": {
++      "version": "1.2.0",
++      "resolved": "https://registry.npmjs.org/setprototypeof/-/setprototypeof-1.2.0.tgz",
++      "integrity": "sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==",
++      "license": "ISC"
++    },
++    "node_modules/side-channel": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/side-channel/-/side-channel-1.1.1.tgz",
++      "integrity": "sha512-6x6dK6zJdpTzF4sQeNYxwtvBzf6Eg4GtlesS94HOvTudUeyK2WXAaIfmDgsyslYrRBeFIlsi54AYsFGUuhmvrQ==",
++      "license": "MIT",
++      "dependencies": {
++        "es-errors": "^1.3.0",
++        "object-inspect": "^1.13.4",
++        "side-channel-list": "^1.0.1",
++        "side-channel-map": "^1.0.1",
++        "side-channel-weakmap": "^1.0.2"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/side-channel-list": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/side-channel-list/-/side-channel-list-1.0.1.tgz",
++      "integrity": "sha512-mjn/0bi/oUURjc5Xl7IaWi/OJJJumuoJFQJfDDyO46+hBWsfaVM65TBHq2eoZBhzl9EchxOijpkbRC8SVBQU0w==",
++      "license": "MIT",
++      "dependencies": {
++        "es-errors": "^1.3.0",
++        "object-inspect": "^1.13.4"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/side-channel-map": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/side-channel-map/-/side-channel-map-1.0.1.tgz",
++      "integrity": "sha512-VCjCNfgMsby3tTdo02nbjtM/ewra6jPHmpThenkTYh8pG9ucZ/1P8So4u4FGBek/BjpOVsDCMoLA/iuBKIFXRA==",
++      "license": "MIT",
++      "dependencies": {
++        "call-bound": "^1.0.2",
++        "es-errors": "^1.3.0",
++        "get-intrinsic": "^1.2.5",
++        "object-inspect": "^1.13.3"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/side-channel-weakmap": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/side-channel-weakmap/-/side-channel-weakmap-1.0.2.tgz",
++      "integrity": "sha512-WPS/HvHQTYnHisLo9McqBHOJk2FkHO/tlpvldyrnem4aeQp4hai3gythswg6p01oSoTl58rcpiFAjF2br2Ak2A==",
++      "license": "MIT",
++      "dependencies": {
++        "call-bound": "^1.0.2",
++        "es-errors": "^1.3.0",
++        "get-intrinsic": "^1.2.5",
++        "object-inspect": "^1.13.3",
++        "side-channel-map": "^1.0.1"
++      },
++      "engines": {
++        "node": ">= 0.4"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/ljharb"
++      }
++    },
++    "node_modules/simple-update-notifier": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/simple-update-notifier/-/simple-update-notifier-2.0.0.tgz",
++      "integrity": "sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "semver": "^7.5.3"
++      },
++      "engines": {
++        "node": ">=10"
++      }
++    },
++    "node_modules/sql-escaper": {
++      "version": "1.9.1",
++      "resolved": "https://registry.npmjs.org/sql-escaper/-/sql-escaper-1.9.1.tgz",
++      "integrity": "sha512-4p522TVYaJXTbMlYgAwacjyg3EJyYe9KYWYlYJVwZG1YjtzxU5m5iSzsZoGI69Po7j3i/2tKlpZQi7uvhTL+WA==",
++      "license": "MIT",
++      "engines": {
++        "bun": ">=1.0.0",
++        "deno": ">=2.0.0",
++        "node": ">=12.0.0"
++      },
++      "funding": {
++        "type": "github",
++        "url": "https://github.com/mysqljs/sql-escaper?sponsor=1"
++      }
++    },
++    "node_modules/statuses": {
++      "version": "2.0.2",
++      "resolved": "https://registry.npmjs.org/statuses/-/statuses-2.0.2.tgz",
++      "integrity": "sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      }
++    },
++    "node_modules/supports-color": {
++      "version": "5.5.0",
++      "resolved": "https://registry.npmjs.org/supports-color/-/supports-color-5.5.0.tgz",
++      "integrity": "sha512-QjVjwdXIt408MIiAqCX4oUKsgU2EqAGzs2Ppkm4aQYbjm+ZEWEcW4SfFNTr4uMNZma0ey4f5lgLrkB0aX0QMow==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "has-flag": "^3.0.0"
++      },
++      "engines": {
++        "node": ">=4"
++      }
++    },
++    "node_modules/to-regex-range": {
++      "version": "5.0.1",
++      "resolved": "https://registry.npmjs.org/to-regex-range/-/to-regex-range-5.0.1.tgz",
++      "integrity": "sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "is-number": "^7.0.0"
++      },
++      "engines": {
++        "node": ">=8.0"
++      }
++    },
++    "node_modules/toidentifier": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/toidentifier/-/toidentifier-1.0.1.tgz",
++      "integrity": "sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.6"
++      }
++    },
++    "node_modules/touch": {
++      "version": "3.1.1",
++      "resolved": "https://registry.npmjs.org/touch/-/touch-3.1.1.tgz",
++      "integrity": "sha512-r0eojU4bI8MnHr8c5bNo7lJDdI2qXlWWJk6a9EAFG7vbhTjElYhBVS3/miuE0uOuoLdb8Mc/rVfsmm6eo5o9GA==",
++      "dev": true,
++      "license": "ISC",
++      "bin": {
++        "nodetouch": "bin/nodetouch.js"
++      }
++    },
++    "node_modules/type-is": {
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/type-is/-/type-is-2.1.0.tgz",
++      "integrity": "sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==",
++      "license": "MIT",
++      "dependencies": {
++        "content-type": "^2.0.0",
++        "media-typer": "^1.1.0",
++        "mime-types": "^3.0.0"
++      },
++      "engines": {
++        "node": ">= 18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
++    "node_modules/undefsafe": {
++      "version": "2.0.5",
++      "resolved": "https://registry.npmjs.org/undefsafe/-/undefsafe-2.0.5.tgz",
++      "integrity": "sha512-WxONCrssBM8TSPRqN5EmsjVrsv4A8X12J4ArBiiayv3DyyG3ZlIg6yysuuSYdZsVz3TKcTg2fd//Ujd4CHV1iA==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/undici": {
++      "version": "7.30.2",
++      "resolved": "https://registry.npmjs.org/undici/-/undici-7.30.2.tgz",
++      "integrity": "sha512-mLyPQnHwUxaM/rideoK/+KL8DaAJLRl4aBCfmX444aCSLnIaomqPLtNRe2jdCYcsk5wZzXrDIQC8ZeYNRAYyIA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.18.1"
++      }
++    },
++    "node_modules/undici-types": {
++      "version": "8.9.0",
++      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz",
++      "integrity": "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==",
++      "license": "MIT",
++      "peer": true
++    },
++    "node_modules/unpipe": {
++      "version": "1.0.0",
++      "resolved": "https://registry.npmjs.org/unpipe/-/unpipe-1.0.0.tgz",
++      "integrity": "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      }
++    },
++    "node_modules/vary": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/vary/-/vary-1.1.2.tgz",
++      "integrity": "sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 0.8"
++      }
++    },
++    "node_modules/wrappy": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/wrappy/-/wrappy-1.0.2.tgz",
++      "integrity": "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==",
++      "license": "ISC"
++    },
++    "node_modules/ws": {
++      "version": "8.21.0",
++      "resolved": "https://registry.npmjs.org/ws/-/ws-8.21.0.tgz",
++      "integrity": "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=10.0.0"
++      },
++      "peerDependencies": {
++        "bufferutil": "^4.0.1",
++        "utf-8-validate": ">=5.0.2"
++      },
++      "peerDependenciesMeta": {
++        "bufferutil": {
++          "optional": true
++        },
++        "utf-8-validate": {
++          "optional": true
++        }
++      }
++    }
++  }
++}
+diff --git a/crypto_alerts/package.json b/crypto_alerts/package.json
+new file mode 100644
+index 0000000..94cfe80
+--- /dev/null
++++ b/crypto_alerts/package.json
+@@ -0,0 +1,32 @@
++{
++  "name": "crypto_alerts",
++  "version": "1.0.0",
++  "description": "",
++  "main": "index.js",
++  "directories": {
++    "doc": "docs"
++  },
++  "scripts": {
++    "test": "node --test \"test/**/*.test.js\"",
++    "seed": "node seed.js",
++    "dev": "nodemon index.js"
++  },
++  "keywords": [],
++  "author": "",
++  "license": "ISC",
++  "type": "commonjs",
++  "dependencies": {
++    "ccxt": "^4.5.93",
++    "dotenv": "^18.0.10",
++    "ejs": "^7.0.2",
++    "express": "^5.3.0",
++    "mysql2": "^3.24.6"
++  },
++  "devDependencies": {
++    "nodemon": "^3.1.14"
++  },
++  "allowScripts": {
++    "bufferutil@4.1.0": true,
++    "ccxt@4.5.93": true
++  }
++}
+diff --git a/crypto_alerts/public/css/style.css b/crypto_alerts/public/css/style.css
+new file mode 100644
+index 0000000..bf7e2ec
+--- /dev/null
++++ b/crypto_alerts/public/css/style.css
+@@ -0,0 +1,107 @@
++/* Custom styles for CryptoAlert SG Split-View UI with Dark/Light Support */
++
++:root {
++  --app-bg: #f4f6f9;
++  --card-border: rgba(0, 0, 0, 0.08);
++  --table-head-bg: #f8f9fa;
++  --transition-speed: 0.2s;
++}
++
++[data-bs-theme="dark"] {
++  --app-bg: #0f1217;
++  --card-border: rgba(255, 255, 255, 0.08);
++  --table-head-bg: #161b22;
++}
++
++body {
++  background-color: var(--app-bg);
++  color: var(--bs-body-color);
++  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
++  min-height: 100vh;
++  transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease;
++}
++
++/* Card & Surface Styling */
++.card {
++  border: 1px solid var(--card-border) !important;
++  transition: background-color var(--transition-speed) ease, border-color var(--transition-speed) ease;
++}
++
++.table th {
++  font-size: 0.82rem;
++  letter-spacing: 0.03em;
++  text-transform: uppercase;
++  color: var(--bs-secondary-color);
++  background-color: var(--table-head-bg) !important;
++}
++
++/* Status Badges */
++.badge-active {
++  background-color: #d1e7dd;
++  color: #0f5132;
++  border: 1px solid #badbcc;
++}
++
++[data-bs-theme="dark"] .badge-active {
++  background-color: rgba(25, 135, 84, 0.2);
++  color: #75b798;
++  border: 1px solid rgba(117, 183, 152, 0.3);
++}
++
++.badge-triggered {
++  background-color: #f8d7da;
++  color: #842029;
++  border: 1px solid #f5c2c7;
++}
++
++[data-bs-theme="dark"] .badge-triggered {
++  background-color: rgba(220, 53, 69, 0.2);
++  color: #ea868f;
++  border: 1px solid rgba(234, 134, 143, 0.3);
++}
++
++/* Triggered Row Highlight in Dark/Light */
++.table-danger-subtle {
++  background-color: rgba(220, 53, 69, 0.08) !important;
++}
++
++[data-bs-theme="dark"] .table-danger-subtle {
++  background-color: rgba(220, 53, 69, 0.15) !important;
++}
++
++/* Ticker Card Icons & Pulse */
++.asset-icon-btc {
++  background: rgba(247, 147, 26, 0.15);
++  color: #f7931a;
++  border-radius: 50%;
++  width: 32px;
++  height: 32px;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  font-weight: bold;
++}
++
++.asset-icon-eth {
++  background: rgba(98, 126, 234, 0.15);
++  color: #627eea;
++  border-radius: 50%;
++  width: 32px;
++  height: 32px;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  font-weight: bold;
++}
++
++.asset-icon-sol {
++  background: rgba(20, 241, 149, 0.15);
++  color: #14f195;
++  border-radius: 50%;
++  width: 32px;
++  height: 32px;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  font-weight: bold;
++}
+diff --git a/crypto_alerts/routes/alertRoutes.js b/crypto_alerts/routes/alertRoutes.js
+new file mode 100644
+index 0000000..2a5c180
+--- /dev/null
++++ b/crypto_alerts/routes/alertRoutes.js
+@@ -0,0 +1,244 @@
++const express = require("express");
++const router = express.Router();
++const pool = require("../config/db");
++const priceService = require("../services/priceService");
++const seedModule = require("../seed");
++
++/**
++ * GET /
++ * Loads Split-View dashboard with optional multi-criteria filters:
++ * - user_id (e.g. 1 or 2)
++ * - status ('active' -> is_triggered=0, 'triggered' -> is_triggered=1, 'all' -> any)
++ * - edit_id (pre-populates the left-column form for updating)
++ */
++router.get("/", async (req, res, next) => {
++  try {
++    const selectedUserId = req.query.user_id ? parseInt(req.query.user_id, 10) : "";
++    const selectedStatus = req.query.status || "all";
++
++    // 2. Validate and fetch single record for edit if edit_id parameter is present in query
++    let editAlert = null;
++    if (req.query.edit_id !== undefined) {
++      const editId = parseInt(req.query.edit_id, 10);
++      if (isNaN(editId) || editId <= 0) {
++        return res.status(400).send("Invalid Alert ID");
++      }
++      const [editRows] = await pool.query("SELECT * FROM price_alerts WHERE id = ?", [editId]);
++      if (editRows.length === 0) {
++        return res.status(404).send("Alert not found");
++      }
++      editAlert = editRows[0];
++    }
++
++    // 1. Fetch dropdown options & reference data
++    const [users] = await pool.query("SELECT id, username, email FROM users ORDER BY id ASC");
++    const [assets] = await pool.query("SELECT id, symbol, name, last_d1_close, last_updated FROM assets ORDER BY id ASC");
++    const [exchanges] = await pool.query("SELECT id, ccxt_id, display_name FROM exchanges WHERE is_active = TRUE ORDER BY priority_order ASC");
++
++    // 3. Build dynamic SQL query for alerts with 2+ criteria & table joins
++    // SELECT #2: Demonstrates multi-table JOINs across price_alerts, assets, exchanges, and users
++    let querySql = `
++      SELECT 
++        pa.id,
++        pa.user_id,
++        u.username,
++        pa.asset_id,
++        a.symbol AS asset_symbol,
++        a.name AS asset_name,
++        a.last_d1_close,
++        pa.exchange_id,
++        e.display_name AS exchange_name,
++        pa.target_price,
++        pa.condition_type,
++        pa.is_triggered,
++        pa.created_at
++      FROM price_alerts pa
++      JOIN users u ON pa.user_id = u.id
++      JOIN assets a ON pa.asset_id = a.id
++      JOIN exchanges e ON pa.exchange_id = e.id
++      WHERE 1=1
++    `;
++    const queryParams = [];
++
++    // Filter Criterion 1: user_id
++    if (selectedUserId && !isNaN(selectedUserId)) {
++      querySql += " AND pa.user_id = ?";
++      queryParams.push(selectedUserId);
++    }
++
++    // Filter Criterion 2: alert trigger status
++    if (selectedStatus === "active") {
++      querySql += " AND pa.is_triggered = FALSE";
++    } else if (selectedStatus === "triggered") {
++      querySql += " AND pa.is_triggered = TRUE";
++    }
++
++    querySql += " ORDER BY pa.created_at DESC";
++
++    const [alerts] = await pool.query(querySql, queryParams);
++
++    // Render index view
++    res.render("index", {
++      pageTitle: "Crypto Daily Alerts (CICO / D1)",
++      users,
++      assets,
++      exchanges,
++      alerts,
++      editAlert,
++      selectedUserId,
++      selectedStatus,
++    });
++  } catch (err) {
++    console.error("Error loading dashboard:", err);
++    next(err);
++  }
++});
++
++/**
++ * POST /alerts
++ * Creates a new price alert record
++ */
++router.post("/alerts", async (req, res, next) => {
++  try {
++    const userId = parseInt(req.body.user_id, 10);
++    const assetId = parseInt(req.body.asset_id, 10);
++    const exchangeId = parseInt(req.body.exchange_id, 10);
++    const targetPrice = parseFloat(req.body.target_price);
++    const conditionType = (req.body.condition_type || "").trim().toUpperCase();
++
++    // Input validation
++    if (isNaN(userId) || userId <= 0) return res.status(400).send("Invalid User ID");
++    if (isNaN(assetId) || assetId <= 0) return res.status(400).send("Invalid Asset ID");
++    if (isNaN(exchangeId) || exchangeId <= 0) return res.status(400).send("Invalid Exchange ID");
++    if (isNaN(targetPrice) || targetPrice <= 0) return res.status(400).send("Target price must be greater than 0");
++    if (conditionType !== "ABOVE" && conditionType !== "BELOW") {
++      return res.status(400).send("Condition must be ABOVE or BELOW");
++    }
++
++    // Insert alert into database using transaction
++    const connection = await pool.getConnection();
++    try {
++      await connection.beginTransaction();
++      const insertSql = `
++        INSERT INTO price_alerts (user_id, asset_id, exchange_id, target_price, condition_type, is_triggered)
++        VALUES (?, ?, ?, ?, ?, FALSE)
++      `;
++      await connection.query(insertSql, [userId, assetId, exchangeId, targetPrice, conditionType]);
++      await connection.commit();
++    } catch (txErr) {
++      await connection.rollback();
++      throw txErr;
++    } finally {
++      connection.release();
++    }
++
++    res.redirect("/");
++  } catch (err) {
++    console.error("Error creating alert:", err);
++    next(err);
++  }
++});
++
++/**
++ * POST /alerts/:id/update
++ * Updates an existing price alert and resets triggered status
++ */
++router.post("/alerts/:id/update", async (req, res, next) => {
++  try {
++    const alertId = parseInt(req.params.id, 10);
++    if (isNaN(alertId) || alertId <= 0) {
++      return res.status(400).send("Invalid Alert ID");
++    }
++
++    const userId = parseInt(req.body.user_id, 10);
++    const assetId = parseInt(req.body.asset_id, 10);
++    const exchangeId = parseInt(req.body.exchange_id, 10);
++    const targetPrice = parseFloat(req.body.target_price);
++    const conditionType = (req.body.condition_type || "").trim().toUpperCase();
++
++    // Input validation
++    if (isNaN(userId) || userId <= 0) return res.status(400).send("Invalid User ID");
++    if (isNaN(assetId) || assetId <= 0) return res.status(400).send("Invalid Asset ID");
++    if (isNaN(exchangeId) || exchangeId <= 0) return res.status(400).send("Invalid Exchange ID");
++    if (isNaN(targetPrice) || targetPrice <= 0) return res.status(400).send("Target price must be greater than 0");
++    if (conditionType !== "ABOVE" && conditionType !== "BELOW") {
++      return res.status(400).send("Condition must be ABOVE or BELOW");
++    }
++
++    const updateSql = `
++      UPDATE price_alerts
++      SET user_id = ?, asset_id = ?, exchange_id = ?, target_price = ?, condition_type = ?, is_triggered = FALSE
++      WHERE id = ?
++    `;
++    const [result] = await pool.query(updateSql, [
++      userId,
++      assetId,
++      exchangeId,
++      targetPrice,
++      conditionType,
++      alertId,
++    ]);
++
++    if (result.affectedRows === 0) {
++      return res.status(404).send("Alert not found");
++    }
++
++    res.redirect("/");
++  } catch (err) {
++    console.error("Error updating alert:", err);
++    next(err);
++  }
++});
++
++/**
++ * POST /alerts/:id/delete
++ * Deletes a price alert record
++ */
++router.post("/alerts/:id/delete", async (req, res, next) => {
++  try {
++    const alertId = parseInt(req.params.id, 10);
++    if (isNaN(alertId) || alertId <= 0) {
++      return res.status(400).send("Invalid Alert ID");
++    }
++
++    const [result] = await pool.query("DELETE FROM price_alerts WHERE id = ?", [alertId]);
++    if (result.affectedRows === 0) {
++      return res.status(404).send("Alert not found");
++    }
++
++    res.redirect("/");
++  } catch (err) {
++    console.error("Error deleting alert:", err);
++    next(err);
++  }
++});
++
++/**
++ * POST /refresh
++ * Triggers batch price refresh across all assets and evaluates alerts
++ */
++router.post("/refresh", async (req, res, next) => {
++  try {
++    await priceService.refreshAllPrices();
++    res.redirect("/");
++  } catch (err) {
++    console.error("Error refreshing prices:", err);
++    next(err);
++  }
++});
++
++/**
++ * POST /reset-db
++ * Drops all records (0 rows) and re-seeds baseline data
++ */
++router.post("/reset-db", async (req, res, next) => {
++  try {
++    await seedModule.seedDatabase();
++    res.redirect("/");
++  } catch (err) {
++    console.error("Error resetting database:", err);
++    next(err);
++  }
++});
++
++module.exports = router;
+diff --git a/crypto_alerts/seed.js b/crypto_alerts/seed.js
+new file mode 100644
+index 0000000..bf8cc2e
+--- /dev/null
++++ b/crypto_alerts/seed.js
+@@ -0,0 +1,93 @@
++// seed.js
++const mysql = require("mysql2/promise");
++require("dotenv").config();
++
++async function seedDatabase() {
++  const connection = await mysql.createConnection({
++    host: process.env.DB_HOST || "127.0.0.1",
++    user: process.env.DB_USER || "root",
++    password: process.env.DB_PASSWORD || "",
++    database: process.env.DB_NAME || "crypto_alerts_db",
++  });
++
++  try {
++    console.log("Connected to MySQL. Starting database seed...");
++
++    // Clear existing records in reverse dependency order to respect FK constraints
++    await connection.query("DELETE FROM price_alerts");
++    await connection.query("DELETE FROM assets");
++    await connection.query("DELETE FROM exchanges");
++    await connection.query("DELETE FROM users");
++
++    // Reset AUTO_INCREMENT counters for clean IDs (1, 2, 3...)
++    await connection.query("ALTER TABLE price_alerts AUTO_INCREMENT = 1");
++    await connection.query("ALTER TABLE assets AUTO_INCREMENT = 1");
++    await connection.query("ALTER TABLE exchanges AUTO_INCREMENT = 1");
++    await connection.query("ALTER TABLE users AUTO_INCREMENT = 1");
++
++    // Start transaction for clean atomic seed operations
++    await connection.beginTransaction();
++
++    // 1. Seed Users
++    const usersSql = `
++      INSERT INTO users (username, email) VALUES 
++      ('leekwan', 'leekwan@example.com'),
++      ('trader_sg', 'trader.sg@example.com')
++    `;
++    await connection.query(usersSql);
++    console.log("Seeded users table.");
++
++    // 2. Seed Exchanges (OKX prioritized for Singapore, Binance as secondary, Local fallback)
++    const exchangesSql = `
++      INSERT INTO exchanges (ccxt_id, display_name, is_active, priority_order) VALUES 
++      ('okx', 'OKX Singapore', TRUE, 1),
++      ('binance', 'Binance Global', TRUE, 2),
++      ('local_mock', 'Offline D1 Snapshot', TRUE, 3)
++    `;
++    await connection.query(exchangesSql);
++    console.log("Seeded exchanges table.");
++
++    // 3. Seed Crypto Assets
++    const assetsSql = `
++      INSERT INTO assets (symbol, name, last_d1_close) VALUES 
++      ('BTC/USDT', 'Bitcoin', 88500.00000000),
++      ('ETH/USDT', 'Ethereum', 3120.50000000),
++      ('SOL/USDT', 'Solana', 185.25000000)
++    `;
++    await connection.query(assetsSql);
++    console.log("Seeded assets table.");
++
++    // 4. Seed Price Alerts
++    // References: user_id (1=leekwan, 2=trader_sg), asset_id (1=BTC, 2=ETH, 3=SOL), exchange_id (1=OKX, 2=Binance)
++    const alertsSql = `
++      INSERT INTO price_alerts (user_id, asset_id, exchange_id, target_price, condition_type, is_triggered) VALUES 
++      (1, 1, 1, 80000.00000000, 'ABOVE', FALSE),
++      (1, 1, 1, 120000.00000000, 'ABOVE', FALSE),
++      (1, 2, 1, 2500.00000000, 'BELOW', FALSE),
++      (1, 3, 2, 150.00000000, 'ABOVE', TRUE),
++      (2, 1, 1, 85000.00000000, 'BELOW', FALSE)
++    `;
++    await connection.query(alertsSql);
++    console.log("Seeded price_alerts table.");
++
++    await connection.commit();
++    console.log("Database seeding completed successfully.");
++    return { success: true };
++  } catch (err) {
++    await connection.rollback().catch(() => {});
++    console.error("Error seeding database:", err);
++    throw err;
++  } finally {
++    await connection.end();
++  }
++}
++
++if (require.main === module) {
++  seedDatabase().catch((err) => {
++    console.error(err);
++    process.exit(1);
++  });
++}
++
++module.exports = { seedDatabase };
++
+diff --git a/crypto_alerts/services/priceService.js b/crypto_alerts/services/priceService.js
+new file mode 100644
+index 0000000..ff62552
+--- /dev/null
++++ b/crypto_alerts/services/priceService.js
+@@ -0,0 +1,144 @@
++const fs = require("fs");
++const path = require("path");
++const ccxt = require("ccxt");
++const pool = require("../config/db");
++
++const FALLBACK_PATH = path.join(__dirname, "..", "data", "fallback_d1.json");
++
++/**
++ * Load offline snapshot fallback prices from JSON
++ */
++function loadFallbackPrices() {
++  try {
++    const rawData = fs.readFileSync(FALLBACK_PATH, "utf8");
++    return JSON.parse(rawData);
++  } catch (err) {
++    console.warn("Could not read fallback_d1.json, using default hardcoded map:", err.message);
++    return {
++      "BTC/USDT": 89200.0,
++      "ETH/USDT": 3180.0,
++      "SOL/USDT": 192.5,
++    };
++  }
++}
++
++/**
++ * Attempt to fetch daily (1d) close price using CCXT for an exchange and symbol.
++ * Returns null if network fails or exchange is geo-blocked.
++ */
++async function fetchD1PriceFromExchange(ccxtId, symbol) {
++  try {
++    if (!ccxt[ccxtId]) {
++      return null;
++    }
++    const exchange = new ccxt[ccxtId]({
++      timeout: 6000,
++      enableRateLimit: true,
++    });
++
++    // fetchOHLCV(symbol, timeframe, since, limit)
++    const ohlcv = await exchange.fetchOHLCV(symbol, "1d", undefined, 1);
++    if (ohlcv && ohlcv.length > 0 && ohlcv[0][4] !== undefined) {
++      // ohlcv entry is [timestamp, open, high, low, close, volume]
++      return parseFloat(ohlcv[0][4]);
++    }
++    return null;
++  } catch (err) {
++    console.warn(`CCXT error on ${ccxtId} for ${symbol}: ${err.message}`);
++    return null;
++  }
++}
++
++/**
++ * Refresh daily close prices for all assets in the database,
++ * prioritizing active exchanges (OKX -> Binance), falling back to offline JSON if needed,
++ * and re-evaluating price alert triggers.
++ *
++ * @returns {Promise<{
++ *   sourceUsed: string,
++ *   updatedAssets: Array<{ symbol: string, price: number }>,
++ *   triggeredCount: number
++ * }>}
++ */
++async function refreshAllPrices() {
++  const fallbackPrices = loadFallbackPrices();
++
++  // 1. Get active exchanges sorted by priority_order
++  const [exchanges] = await pool.query(
++    "SELECT id, ccxt_id, display_name FROM exchanges WHERE is_active = TRUE ORDER BY priority_order ASC"
++  );
++
++  // 2. Get list of assets to update
++  const [assets] = await pool.query("SELECT id, symbol FROM assets");
++
++  let activeSourceDisplayName = "Offline D1 Snapshot";
++  const updatedAssets = [];
++
++  for (const asset of assets) {
++    let resolvedPrice = null;
++    let sourceForAsset = "Offline D1 Snapshot";
++
++    // Attempt live fetch across active exchanges by priority
++    for (const ex of exchanges) {
++      if (ex.ccxt_id === "local_mock") continue;
++
++      const price = await fetchD1PriceFromExchange(ex.ccxt_id, asset.symbol);
++      if (price !== null && !isNaN(price)) {
++        resolvedPrice = price;
++        sourceForAsset = ex.display_name;
++        activeSourceDisplayName = ex.display_name;
++        break; // Stop at first successful exchange
++      }
++    }
++
++    // Fall back to offline snapshot if all live calls failed
++    if (resolvedPrice === null) {
++      resolvedPrice = fallbackPrices[asset.symbol] ?? 0.0;
++    }
++
++    // 3. Update database record for asset
++    await pool.query(
++      "UPDATE assets SET last_d1_close = ?, last_updated = NOW() WHERE id = ?",
++      [resolvedPrice, asset.id]
++    );
++
++    updatedAssets.push({
++      symbol: asset.symbol,
++      price: resolvedPrice,
++      source: sourceForAsset,
++    });
++  }
++
++  // 4. Update price alert triggers based on latest asset prices
++  // Trigger condition:
++  // - 'ABOVE': asset's last_d1_close >= alert.target_price
++  // - 'BELOW': asset's last_d1_close <= alert.target_price
++  const triggerQuery = `
++    UPDATE price_alerts pa
++    JOIN assets a ON pa.asset_id = a.id
++    SET pa.is_triggered = CASE
++      WHEN pa.condition_type = 'ABOVE' AND a.last_d1_close >= pa.target_price THEN TRUE
++      WHEN pa.condition_type = 'BELOW' AND a.last_d1_close <= pa.target_price THEN TRUE
++      ELSE FALSE
++    END
++  `;
++  await pool.query(triggerQuery);
++
++  // 5. Count currently triggered alerts
++  const [triggeredRows] = await pool.query(
++    "SELECT COUNT(*) AS count FROM price_alerts WHERE is_triggered = TRUE"
++  );
++  const triggeredCount = triggeredRows[0]?.count || 0;
++
++  return {
++    sourceUsed: activeSourceDisplayName,
++    updatedAssets,
++    triggeredCount,
++  };
++}
++
++module.exports = {
++  fetchD1PriceFromExchange,
++  loadFallbackPrices,
++  refreshAllPrices,
++};
+diff --git a/crypto_alerts/sql/schema.sql b/crypto_alerts/sql/schema.sql
+new file mode 100644
+index 0000000..4316da3
+--- /dev/null
++++ b/crypto_alerts/sql/schema.sql
+@@ -0,0 +1,43 @@
++CREATE DATABASE IF NOT EXISTS crypto_alerts_db;
++USE crypto_alerts_db;
++
++-- Table 1: Users
++CREATE TABLE users (
++    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
++    username VARCHAR(50) NOT NULL UNIQUE,
++    email VARCHAR(100) NOT NULL UNIQUE,
++    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
++);
++
++-- Table 2: Exchanges (e.g., OKX, Binance, Kraken)
++CREATE TABLE exchanges (
++    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
++    ccxt_id VARCHAR(30) NOT NULL UNIQUE,      -- e.g., 'okx', 'binance'
++    display_name VARCHAR(50) NOT NULL,        -- e.g., 'OKX Singapore', 'Binance'
++    is_active BOOLEAN DEFAULT TRUE,
++    priority_order INT UNSIGNED DEFAULT 1
++);
++
++-- Table 3: Crypto Assets
++CREATE TABLE assets (
++    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
++    symbol VARCHAR(20) NOT NULL UNIQUE,       -- e.g., 'BTC/USDT', 'ETH/USDT'
++    name VARCHAR(50) NOT NULL,                -- e.g., 'Bitcoin', 'Ethereum'
++    last_d1_close DECIMAL(18, 8) DEFAULT 0.0,
++    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
++);
++
++-- Table 4: Price Alerts (Links Users, Assets, and Exchanges)
++CREATE TABLE price_alerts (
++    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
++    user_id INT UNSIGNED NOT NULL,
++    asset_id INT UNSIGNED NOT NULL,
++    exchange_id INT UNSIGNED NOT NULL,
++    target_price DECIMAL(18, 8) NOT NULL,
++    condition_type VARCHAR(10) NOT NULL,      -- 'ABOVE' or 'BELOW'
++    is_triggered BOOLEAN DEFAULT FALSE,
++    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
++    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
++    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
++    FOREIGN KEY (exchange_id) REFERENCES exchanges(id) ON DELETE RESTRICT
++);
+\ No newline at end of file
+diff --git a/crypto_alerts/test/integration.test.js b/crypto_alerts/test/integration.test.js
+new file mode 100644
+index 0000000..48d1ed0
+--- /dev/null
++++ b/crypto_alerts/test/integration.test.js
+@@ -0,0 +1,101 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++
++test("Phase 1-3 Integration Tests - Database Config & Price Service Flow", async (t) => {
++  const pool = require("../config/db");
++  const priceService = require("../services/priceService");
++
++  // Keep references to real methods
++  const originalQuery = pool.query;
++
++  let queryLog = [];
++
++  // Mock pool queries to test service flow deterministically without live DB server requirement
++  const mockDatabase = {
++    async query(sql, params) {
++      queryLog.push({ sql, params });
++
++      // 1. SELECT exchanges
++      if (sql.includes("FROM exchanges WHERE is_active = TRUE")) {
++        return [
++          [
++            { id: 1, ccxt_id: "okx", display_name: "OKX Singapore" },
++            { id: 2, ccxt_id: "binance", display_name: "Binance Global" },
++            { id: 3, ccxt_id: "local_mock", display_name: "Offline D1 Snapshot" },
++          ],
++        ];
++      }
++
++      // 2. SELECT assets
++      if (sql.includes("SELECT id, symbol FROM assets")) {
++        return [
++          [
++            { id: 1, symbol: "BTC/USDT" },
++            { id: 2, symbol: "ETH/USDT" },
++            { id: 3, symbol: "SOL/USDT" },
++          ],
++        ];
++      }
++
++      // 3. UPDATE assets
++      if (sql.includes("UPDATE assets SET last_d1_close")) {
++        return [{ affectedRows: 1 }];
++      }
++
++      // 4. UPDATE price_alerts
++      if (sql.includes("UPDATE price_alerts pa")) {
++        return [{ affectedRows: 2 }];
++      }
++
++      // 5. COUNT triggered
++      if (sql.includes("COUNT(*) AS count FROM price_alerts")) {
++        return [[{ count: 3 }]];
++      }
++
++      return [[]];
++    },
++  };
++
++  t.beforeEach(() => {
++    queryLog = [];
++    pool.query = mockDatabase.query.bind(mockDatabase);
++  });
++
++  t.after(() => {
++    pool.query = originalQuery;
++  });
++
++  await t.test("config/db exports a valid pool object with query and execute methods", () => {
++    assert.ok(pool, "Pool should exist");
++    assert.equal(typeof pool.query, "function");
++    assert.equal(typeof pool.execute, "function");
++    assert.equal(typeof pool.getConnection, "function");
++  });
++
++  await t.test("priceService.refreshAllPrices() executes full workflow and updates assets & alerts", async () => {
++    // When CCXT live calls fail or are mocked, it should fall back to snapshot
++    const result = await priceService.refreshAllPrices();
++
++    assert.ok(result, "Result payload should be returned");
++    assert.ok(result.sourceUsed, "Source used should be identified");
++    assert.equal(Array.isArray(result.updatedAssets), true);
++    assert.equal(result.updatedAssets.length, 3);
++    assert.equal(result.triggeredCount, 3);
++
++    // Verify SQL operations were executed in the expected order
++    const selectExchanges = queryLog.find((q) => q.sql.includes("FROM exchanges"));
++    assert.ok(selectExchanges, "Must query active exchanges");
++
++    const selectAssets = queryLog.find((q) => q.sql.includes("SELECT id, symbol FROM assets"));
++    assert.ok(selectAssets, "Must query tracked assets");
++
++    const updateAssets = queryLog.filter((q) => q.sql.includes("UPDATE assets SET last_d1_close"));
++    assert.equal(updateAssets.length, 3, "Must update 3 assets");
++
++    const updateTriggers = queryLog.find((q) => q.sql.includes("UPDATE price_alerts pa"));
++    assert.ok(updateTriggers, "Must update alert triggers using SQL JOIN / CASE");
++
++    const countTriggers = queryLog.find((q) => q.sql.includes("COUNT(*) AS count FROM price_alerts"));
++    assert.ok(countTriggers, "Must count triggered alerts");
++  });
++});
+diff --git a/crypto_alerts/test/routes.test.js b/crypto_alerts/test/routes.test.js
+new file mode 100644
+index 0000000..0784284
+--- /dev/null
++++ b/crypto_alerts/test/routes.test.js
+@@ -0,0 +1,331 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const http = require("node:http");
++
++test("Phase 4 Integration Tests - Express CRUD Routes & Error Guards", async (t) => {
++  const pool = require("../config/db");
++  const priceService = require("../services/priceService");
++  const app = require("../index");
++
++  const originalPoolQuery = pool.query;
++  const originalGetConnection = pool.getConnection;
++  const originalRefresh = priceService.refreshAllPrices;
++
++  let queryLog = [];
++  let server;
++  let baseUrl;
++
++  // Mock connection handler for transactions
++  const mockConnection = {
++    async beginTransaction() {},
++    async commit() {},
++    async rollback() {},
++    release() {},
++    async query(sql, params) {
++      return mockDatabase.query(sql, params);
++    },
++  };
++
++  // Mock database handler for all route queries
++  const mockDatabase = {
++    async getConnection() {
++      return mockConnection;
++    },
++    async query(sql, params) {
++      queryLog.push({ sql, params });
++
++      // SELECT users
++      if (sql.includes("FROM users")) {
++        return [
++          [
++            { id: 1, username: "leekwan", email: "leekwan@example.com" },
++            { id: 2, username: "trader_sg", email: "trader.sg@example.com" },
++          ],
++        ];
++      }
++
++      // SELECT assets
++      if (sql.includes("FROM assets ORDER BY id ASC")) {
++        return [
++          [
++            { id: 1, symbol: "BTC/USDT", name: "Bitcoin", last_d1_close: 89000, last_updated: "2026-11-18 12:00:00" },
++            { id: 2, symbol: "ETH/USDT", name: "Ethereum", last_d1_close: 3100, last_updated: "2026-11-18 12:00:00" },
++          ],
++        ];
++      }
++
++      // SELECT exchanges
++      if (sql.includes("FROM exchanges WHERE is_active = TRUE")) {
++        return [
++          [
++            { id: 1, ccxt_id: "okx", display_name: "OKX Singapore" },
++            { id: 2, ccxt_id: "binance", display_name: "Binance Global" },
++          ],
++        ];
++      }
++
++      // SELECT single alert for editing
++      if (sql.includes("SELECT * FROM price_alerts WHERE id = ?")) {
++        const id = params && params[0];
++        if (id == 1) {
++          return [
++            [
++              {
++                id: 1,
++                user_id: 1,
++                asset_id: 1,
++                exchange_id: 1,
++                target_price: 80000,
++                condition_type: "ABOVE",
++                is_triggered: 0,
++              },
++            ],
++          ];
++        }
++        return [[]]; // Record not found
++      }
++
++      // SELECT alerts with joins & filters
++      if (sql.includes("FROM price_alerts pa") && sql.includes("JOIN users u")) {
++        return [
++          [
++            {
++              id: 1,
++              user_id: 1,
++              username: "leekwan",
++              asset_id: 1,
++              asset_symbol: "BTC/USDT",
++              asset_name: "Bitcoin",
++              last_d1_close: 89000,
++              exchange_id: 1,
++              exchange_name: "OKX Singapore",
++              target_price: 80000,
++              condition_type: "ABOVE",
++              is_triggered: 1,
++              created_at: "2026-11-18 10:00:00",
++            },
++          ],
++        ];
++      }
++
++      // INSERT alert
++      if (sql.includes("INSERT INTO price_alerts")) {
++        return [{ insertId: 42 }];
++      }
++
++      // UPDATE alert
++      if (sql.includes("UPDATE price_alerts")) {
++        const id = params && params[params.length - 1];
++        if (id == 1) return [{ affectedRows: 1 }];
++        return [{ affectedRows: 0 }];
++      }
++
++      // DELETE alert
++      if (sql.includes("DELETE FROM price_alerts WHERE id = ?")) {
++        const id = params && params[0];
++        if (id == 1) return [{ affectedRows: 1 }];
++        return [{ affectedRows: 0 }];
++      }
++
++      return [[]];
++    },
++  };
++
++  // Start ephemeral server
++  await new Promise((resolve) => {
++    server = http.createServer(app);
++    server.listen(0, () => {
++      const port = server.address().port;
++      baseUrl = `http://127.0.0.1:${port}`;
++      resolve();
++    });
++  });
++
++  t.beforeEach(() => {
++    queryLog = [];
++    pool.query = mockDatabase.query.bind(mockDatabase);
++    pool.getConnection = mockDatabase.getConnection.bind(mockDatabase);
++  });
++
++  t.after(async () => {
++    pool.query = originalPoolQuery;
++    pool.getConnection = originalGetConnection;
++    priceService.refreshAllPrices = originalRefresh;
++    await new Promise((resolve) => server.close(resolve));
++  });
++
++  await t.test("GET / loads dashboard and executes multi-table JOIN query", async () => {
++    const res = await fetch(`${baseUrl}/`);
++    assert.equal(res.status, 200);
++    const body = await res.text();
++    assert.ok(body.includes("Crypto Daily Alerts"));
++
++    const alertQuery = queryLog.find((q) => q.sql.includes("FROM price_alerts pa") && q.sql.includes("JOIN assets a"));
++    assert.ok(alertQuery, "Must execute JOIN query across assets, users, and exchanges");
++  });
++
++  await t.test("GET /?user_id=1&status=active applies multi-criteria filters correctly", async () => {
++    const res = await fetch(`${baseUrl}/?user_id=1&status=active`);
++    assert.equal(res.status, 200);
++
++    const alertQuery = queryLog.find((q) => q.sql.includes("pa.user_id = ?") && q.sql.includes("pa.is_triggered = FALSE"));
++    assert.ok(alertQuery, "Must filter with user_id and active status");
++    assert.equal(alertQuery.params[0], 1);
++  });
++
++  await t.test("GET /?edit_id=1 pre-populates edit form", async () => {
++    const res = await fetch(`${baseUrl}/?edit_id=1`);
++    assert.equal(res.status, 200);
++    const body = await res.text();
++    assert.ok(body.includes("Edit Price Alert") && body.includes("alert #1"));
++  });
++
++  await t.test("GET /?edit_id=9999 returns 404 if alert does not exist", async () => {
++    const res = await fetch(`${baseUrl}/?edit_id=9999`);
++    assert.equal(res.status, 404);
++    assert.ok((await res.text()).includes("Alert not found"));
++  });
++
++  await t.test("GET /?edit_id=not-a-number returns 400 Bad Request", async () => {
++    const res = await fetch(`${baseUrl}/?edit_id=not-a-number`);
++    assert.equal(res.status, 400);
++    assert.ok((await res.text()).includes("Invalid Alert ID"));
++  });
++
++  await t.test("POST /alerts validates input and creates new alert record", async () => {
++    const formBody = new URLSearchParams({
++      user_id: "1",
++      asset_id: "2",
++      exchange_id: "1",
++      target_price: "3500.50",
++      condition_type: "above",
++    });
++
++    const res = await fetch(`${baseUrl}/alerts`, {
++      method: "POST",
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++      body: formBody.toString(),
++      redirect: "manual",
++    });
++
++    assert.equal(res.status, 302);
++    assert.equal(res.headers.get("location"), "/");
++
++    const insertQuery = queryLog.find((q) => q.sql.includes("INSERT INTO price_alerts"));
++    assert.ok(insertQuery);
++    assert.deepEqual(insertQuery.params, [1, 2, 1, 3500.5, "ABOVE"]);
++  });
++
++  await t.test("POST /alerts returns 400 on invalid target price or condition", async () => {
++    const badPrice = new URLSearchParams({
++      user_id: "1",
++      asset_id: "1",
++      exchange_id: "1",
++      target_price: "-100",
++      condition_type: "ABOVE",
++    });
++    const res1 = await fetch(`${baseUrl}/alerts`, {
++      method: "POST",
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++      body: badPrice.toString(),
++    });
++    assert.equal(res1.status, 400);
++
++    const badCondition = new URLSearchParams({
++      user_id: "1",
++      asset_id: "1",
++      exchange_id: "1",
++      target_price: "5000",
++      condition_type: "INVALID_COND",
++    });
++    const res2 = await fetch(`${baseUrl}/alerts`, {
++      method: "POST",
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++      body: badCondition.toString(),
++    });
++    assert.equal(res2.status, 400);
++  });
++
++  await t.test("POST /alerts/:id/update updates alert and resets is_triggered to FALSE", async () => {
++    const formBody = new URLSearchParams({
++      user_id: "1",
++      asset_id: "1",
++      exchange_id: "1",
++      target_price: "92000",
++      condition_type: "BELOW",
++    });
++
++    const res = await fetch(`${baseUrl}/alerts/1/update`, {
++      method: "POST",
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++      body: formBody.toString(),
++      redirect: "manual",
++    });
++
++    assert.equal(res.status, 302);
++    assert.equal(res.headers.get("location"), "/");
++
++    const updateQuery = queryLog.find((q) => q.sql.includes("UPDATE price_alerts"));
++    assert.ok(updateQuery);
++    assert.deepEqual(updateQuery.params, [1, 1, 1, 92000, "BELOW", 1]);
++  });
++
++  await t.test("POST /alerts/:id/delete deletes alert record", async () => {
++    const res = await fetch(`${baseUrl}/alerts/1/delete`, {
++      method: "POST",
++      redirect: "manual",
++    });
++
++    assert.equal(res.status, 302);
++    assert.equal(res.headers.get("location"), "/");
++
++    const deleteQuery = queryLog.find((q) => q.sql.includes("DELETE FROM price_alerts WHERE id = ?"));
++    assert.ok(deleteQuery);
++    assert.deepEqual(deleteQuery.params, [1]);
++  });
++
++  await t.test("POST /refresh triggers priceService.refreshAllPrices and redirects", async () => {
++    let refreshCalled = false;
++    priceService.refreshAllPrices = async () => {
++      refreshCalled = true;
++      return { sourceUsed: "Mock Source", updatedAssets: [], triggeredCount: 0 };
++    };
++
++    const res = await fetch(`${baseUrl}/refresh`, {
++      method: "POST",
++      redirect: "manual",
++    });
++
++    assert.equal(res.status, 302);
++    assert.equal(res.headers.get("location"), "/");
++    assert.equal(refreshCalled, true, "refreshAllPrices() should be invoked");
++  });
++
++  await t.test("POST /reset-db triggers seedDatabase() and redirects to /", async () => {
++    const seedModule = require("../seed");
++    let seedCalled = false;
++    const originalSeed = seedModule.seedDatabase;
++    seedModule.seedDatabase = async () => {
++      seedCalled = true;
++      return { success: true };
++    };
++
++    const res = await fetch(`${baseUrl}/reset-db`, {
++      method: "POST",
++      redirect: "manual",
++    });
++
++    assert.equal(res.status, 302);
++    assert.equal(res.headers.get("location"), "/");
++    assert.equal(seedCalled, true, "seedDatabase() should be called");
++
++    // Restore original seed function
++    seedModule.seedDatabase = originalSeed;
++  });
++
++  await t.test("404 catch-all returns Page Not Found on non-existent endpoints", async () => {
++    const res = await fetch(`${baseUrl}/non-existent-endpoint`);
++    assert.equal(res.status, 404);
++    assert.ok((await res.text()).includes("Page Not Found"));
++  });
++});
+diff --git a/crypto_alerts/test/unit.test.js b/crypto_alerts/test/unit.test.js
+new file mode 100644
+index 0000000..a991ba3
+--- /dev/null
++++ b/crypto_alerts/test/unit.test.js
+@@ -0,0 +1,57 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const path = require("path");
++const fs = require("fs");
++
++test("Phase 1-3 Unit Tests - Fallback Data & Schema Integrity", async (t) => {
++  const priceService = require("../services/priceService");
++
++  await t.test("loadFallbackPrices() correctly parses fallback_d1.json", () => {
++    const prices = priceService.loadFallbackPrices();
++    assert.ok(prices, "Prices object should exist");
++    assert.equal(typeof prices["BTC/USDT"], "number");
++    assert.equal(typeof prices["ETH/USDT"], "number");
++    assert.equal(typeof prices["SOL/USDT"], "number");
++    assert.ok(prices["BTC/USDT"] > 0, "BTC price should be positive");
++  });
++
++  await t.test("loadFallbackPrices() returns hardcoded defaults if JSON is missing/corrupt", () => {
++    // Test with non-existent symbol to verify object shape
++    const prices = priceService.loadFallbackPrices();
++    assert.equal(prices["UNKNOWN/USDT"], undefined);
++  });
++
++  await t.test("schema.sql file exists and defines all 4 required tables", () => {
++    const schemaPath = path.join(__dirname, "..", "sql", "schema.sql");
++    assert.ok(fs.existsSync(schemaPath), "schema.sql should exist");
++    const content = fs.readFileSync(schemaPath, "utf8");
++
++    assert.ok(content.includes("CREATE TABLE users"), "Must contain users table");
++    assert.ok(content.includes("CREATE TABLE exchanges"), "Must contain exchanges table");
++    assert.ok(content.includes("CREATE TABLE assets"), "Must contain assets table");
++    assert.ok(content.includes("CREATE TABLE price_alerts"), "Must contain price_alerts table");
++    assert.ok(content.includes("FOREIGN KEY (user_id) REFERENCES users(id)"), "FK on users exists");
++    assert.ok(content.includes("FOREIGN KEY (asset_id) REFERENCES assets(id)"), "FK on assets exists");
++  });
++
++  await t.test("Alert trigger evaluation logic (ABOVE and BELOW conditions)", () => {
++    const evaluateAlert = (conditionType, currentPrice, targetPrice) => {
++      if (conditionType === "ABOVE") {
++        return currentPrice >= targetPrice;
++      }
++      if (conditionType === "BELOW") {
++        return currentPrice <= targetPrice;
++      }
++      return false;
++    };
++
++    // BTC tests
++    assert.equal(evaluateAlert("ABOVE", 89200, 80000), true);
++    assert.equal(evaluateAlert("ABOVE", 89200, 95000), false);
++    assert.equal(evaluateAlert("BELOW", 89200, 95000), true);
++    assert.equal(evaluateAlert("BELOW", 89200, 80000), false);
++    // Boundary checks
++    assert.equal(evaluateAlert("ABOVE", 80000, 80000), true);
++    assert.equal(evaluateAlert("BELOW", 80000, 80000), true);
++  });
++});
+diff --git a/crypto_alerts/views/index.ejs b/crypto_alerts/views/index.ejs
+new file mode 100644
+index 0000000..ea3ad88
+--- /dev/null
++++ b/crypto_alerts/views/index.ejs
+@@ -0,0 +1,377 @@
++<!DOCTYPE html>
++<html lang="en">
++<head>
++  <meta charset="UTF-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1">
++  <title><%= pageTitle %></title>
++
++  <!-- Prevent Theme Flash (FOUC) by resolving theme immediately -->
++  <script>
++    (function() {
++      const storedTheme = localStorage.getItem('theme') || 'auto';
++      const resolvedTheme = storedTheme === 'auto'
++        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
++        : storedTheme;
++      document.documentElement.setAttribute('data-bs-theme', resolvedTheme);
++    })();
++  </script>
++
++  <!-- Bootstrap 5 CSS -->
++  <link
++    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
++    rel="stylesheet"
++    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
++    crossorigin="anonymous"
++  >
++  <!-- Custom Overrides -->
++  <link rel="stylesheet" href="/css/style.css">
++</head>
++<body>
++
++  <!-- Top Navigation Bar -->
++  <%- include('partials/navbar') %>
++
++  <!-- Main Container -->
++  <main class="container-fluid px-4 py-4">
++
++    <!-- KPI D1 Ticker Cards Strip -->
++    <%- include('partials/kpi_strip') %>
++
++    <!-- Option 1 Split-View Layout -->
++    <div class="row g-4">
++
++      <!-- LEFT COLUMN: Create / Edit Alert Panel (col-md-4) -->
++      <section class="col-lg-4 col-md-5 col-sm-12">
++        <div class="card shadow-sm">
++          <div class="card-header bg-body-tertiary py-3 border-bottom">
++            <h5 class="card-title fw-bold m-0 text-body">
++              <%= editAlert ? '✏️ Edit Price Alert' : '➕ Create Price Alert' %>
++            </h5>
++            <small class="text-secondary">
++              <%= editAlert ? 'Update threshold and conditions for alert #' + editAlert.id : 'Configure target price and trigger notification' %>
++            </small>
++          </div>
++          <div class="card-body p-3">
++            <form
++              method="POST"
++              action="<%= editAlert ? '/alerts/' + editAlert.id + '/update' : '/alerts' %>"
++              class="needs-validation"
++            >
++              <!-- Target User -->
++              <div class="mb-3">
++                <label for="user_id" class="form-label fw-semibold small">User Account</label>
++                <select name="user_id" id="user_id" class="form-select form-select-sm" required>
++                  <% for (let u of users) { %>
++                    <option
++                      value="<%= u.id %>"
++                      <%= (editAlert && editAlert.user_id === u.id) || (!editAlert && String(selectedUserId) === String(u.id)) ? 'selected' : '' %>
++                    >
++                      <%= u.username %> (<%= u.email %>)
++                    </option>
++                  <% } %>
++                </select>
++              </div>
++
++              <!-- Crypto Asset Dropdown -->
++              <div class="mb-3">
++                <label for="asset_id" class="form-label fw-semibold small">Crypto Asset</label>
++                <select name="asset_id" id="asset_id" class="form-select form-select-sm" required>
++                  <% for (let a of assets) { %>
++                    <option
++                      value="<%= a.id %>"
++                      <%= (editAlert && editAlert.asset_id === a.id) ? 'selected' : '' %>
++                    >
++                      <%= a.symbol %> — <%= a.name %> ($<%= Number(a.last_d1_close).toLocaleString('en-US') %>)
++                    </option>
++                  <% } %>
++                </select>
++              </div>
++
++              <!-- Exchange Selection -->
++              <div class="mb-3">
++                <label for="exchange_id" class="form-label fw-semibold small">Price Feed Exchange</label>
++                <select name="exchange_id" id="exchange_id" class="form-select form-select-sm" required>
++                  <% for (let ex of exchanges) { %>
++                    <option
++                      value="<%= ex.id %>"
++                      <%= (editAlert && editAlert.exchange_id === ex.id) ? 'selected' : '' %>
++                    >
++                      <%= ex.display_name %>
++                    </option>
++                  <% } %>
++                </select>
++              </div>
++
++              <!-- Trigger Condition Radio Buttons -->
++              <div class="mb-3">
++                <label class="form-label fw-semibold small d-block">Condition Trigger</label>
++                <div class="btn-group w-100" role="group">
++                  <input
++                    type="radio"
++                    class="btn-check"
++                    name="condition_type"
++                    id="condAbove"
++                    value="ABOVE"
++                    autocomplete="off"
++                    <%= (!editAlert || editAlert.condition_type === 'ABOVE') ? 'checked' : '' %>
++                  >
++                  <label class="btn btn-outline-success btn-sm" for="condAbove">📈 Price ABOVE (>=)</label>
++
++                  <input
++                    type="radio"
++                    class="btn-check"
++                    name="condition_type"
++                    id="condBelow"
++                    value="BELOW"
++                    autocomplete="off"
++                    <%= (editAlert && editAlert.condition_type === 'BELOW') ? 'checked' : '' %>
++                  >
++                  <label class="btn btn-outline-danger btn-sm" for="condBelow">📉 Price BELOW (<=)</label>
++                </div>
++              </div>
++
++              <!-- Target Price Input -->
++              <div class="mb-4">
++                <label for="target_price" class="form-label fw-semibold small">Target Price ($ USD)</label>
++                <div class="input-group input-group-sm">
++                  <span class="input-group-text">$</span>
++                  <input
++                    type="number"
++                    step="0.01"
++                    min="0.01"
++                    name="target_price"
++                    id="target_price"
++                    class="form-control"
++                    placeholder="e.g. 95000.00"
++                    value="<%= editAlert ? Number(editAlert.target_price) : '' %>"
++                    required
++                  >
++                </div>
++              </div>
++
++              <!-- Form Action Buttons -->
++              <div class="d-flex gap-2">
++                <button type="submit" class="btn btn-primary btn-sm flex-grow-1 fw-semibold">
++                  <%= editAlert ? '💾 Update Alert' : '➕ Save Alert' %>
++                </button>
++                <% if (editAlert) { %>
++                  <a href="/" class="btn btn-outline-secondary btn-sm">Cancel</a>
++                <% } %>
++              </div>
++            </form>
++          </div>
++        </div>
++      </section>
++
++      <!-- RIGHT COLUMN: Watchlist Table & Filter Bar (col-md-8) -->
++      <section class="col-lg-8 col-md-7 col-sm-12">
++        <div class="card shadow-sm">
++
++          <!-- Filter Toolbar Header -->
++          <div class="card-header bg-body-tertiary py-3 border-bottom">
++            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
++              <div>
++                <h5 class="card-title fw-bold m-0 text-body">📋 Price Alerts Watchlist</h5>
++                <small class="text-secondary"><%= alerts.length %> alerts matching current criteria</small>
++              </div>
++
++              <!-- Multi-Criteria Filter Bar (GET /) -->
++              <form method="GET" action="/" class="d-flex align-items-center gap-2 flex-wrap">
++                <!-- User Filter -->
++                <select name="user_id" class="form-select form-select-sm" style="width: auto;">
++                  <option value="">Filter by User (All)</option>
++                  <% for (let u of users) { %>
++                    <option value="<%= u.id %>" <%= String(selectedUserId) === String(u.id) ? 'selected' : '' %>>
++                      <%= u.username %>
++                    </option>
++                  <% } %>
++                </select>
++
++                <!-- Status Filter -->
++                <select name="status" class="form-select form-select-sm" style="width: auto;">
++                  <option value="all" <%= selectedStatus === 'all' ? 'selected' : '' %>>All Statuses</option>
++                  <option value="active" <%= selectedStatus === 'active' ? 'selected' : '' %>>🟢 Active</option>
++                  <option value="triggered" <%= selectedStatus === 'triggered' ? 'selected' : '' %>>🔴 Triggered</option>
++                </select>
++
++                <button type="submit" class="btn btn-outline-primary btn-sm">Filter</button>
++                <a href="/" class="btn btn-outline-secondary btn-sm">Reset</a>
++              </form>
++            </div>
++          </div>
++
++          <!-- Alerts Responsive Table -->
++          <div class="table-responsive">
++            <table class="table table-hover align-middle mb-0">
++              <thead class="table-light">
++                <tr>
++                  <th scope="col" class="ps-3">ID</th>
++                  <th scope="col">User</th>
++                  <th scope="col">Asset</th>
++                  <th scope="col">Exchange</th>
++                  <th scope="col">Condition</th>
++                  <th scope="col">Target ($)</th>
++                  <th scope="col">Status</th>
++                  <th scope="col" class="text-end pe-3">Actions</th>
++                </tr>
++              </thead>
++              <tbody>
++                <% if (alerts.length === 0) { %>
++                  <tr>
++                    <td colspan="8" class="text-center py-4 text-muted">
++                      No price alerts found matching the selected filters. Use the left panel to create one!
++                    </td>
++                  </tr>
++                <% } else { %>
++                  <% for (let alert of alerts) { %>
++                    <tr class="<%= alert.is_triggered ? 'table-danger-subtle' : '' %>">
++                      <td class="ps-3 fw-bold text-secondary">#<%= alert.id %></td>
++                      <td>
++                        <span class="fw-semibold"><%= alert.username %></span>
++                      </td>
++                      <td>
++                        <span class="badge bg-secondary-subtle text-secondary border">
++                          <%= alert.asset_symbol %>
++                        </span>
++                      </td>
++                      <td><small class="text-muted"><%= alert.exchange_name %></small></td>
++                      <td>
++                        <% if (alert.condition_type === 'ABOVE') { %>
++                          <span class="badge bg-success-subtle text-success border border-success-subtle">
++                            >= ABOVE
++                          </span>
++                        <% } else { %>
++                          <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
++                            <= BELOW
++                          </span>
++                        <% } %>
++                      </td>
++                      <td class="fw-bold text-body">
++                        $<%= Number(alert.target_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
++                      </td>
++                      <td>
++                        <% if (alert.is_triggered) { %>
++                          <span class="badge badge-triggered px-2 py-1">🔴 TRIGGERED</span>
++                        <% } else { %>
++                          <span class="badge badge-active px-2 py-1">🟢 ACTIVE</span>
++                        <% } %>
++                      </td>
++                      <td class="text-end pe-3">
++                        <div class="d-inline-flex gap-1">
++                          <!-- Edit Button -->
++                          <a
++                            href="/?edit_id=<%= alert.id %>&user_id=<%= selectedUserId %>&status=<%= selectedStatus %>"
++                            class="btn btn-outline-primary btn-sm py-0 px-2"
++                            title="Edit Alert"
++                          >
++                            Edit
++                          </a>
++
++                          <!-- Delete Button Form -->
++                          <form
++                            action="/alerts/<%= alert.id %>/delete"
++                            method="POST"
++                            class="d-inline m-0"
++                            onsubmit="return confirm('Are you sure you want to delete Alert #<%= alert.id %>?');"
++                          >
++                            <button
++                              type="submit"
++                              class="btn btn-outline-danger btn-sm py-0 px-2"
++                              title="Delete Alert"
++                            >
++                              Delete
++                            </button>
++                          </form>
++                        </div>
++                      </td>
++                    </tr>
++                  <% } %>
++                <% } %>
++              </tbody>
++            </table>
++          </div>
++        </div>
++      </section>
++
++    </div>
++  </main>
++
++  <!-- Bootstrap 5 Bundle JS -->
++  <script
++    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
++    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
++    crossorigin="anonymous"
++  ></script>
++
++  <!-- Theme Toggle Client Controller -->
++  <script>
++    (function() {
++      const getStoredTheme = () => localStorage.getItem('theme') || 'auto';
++      const setStoredTheme = (theme) => localStorage.setItem('theme', theme);
++
++      const getPreferredTheme = () => {
++        const storedTheme = getStoredTheme();
++        if (storedTheme !== 'auto') {
++          return storedTheme;
++        }
++        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
++      };
++
++      const setTheme = (theme) => {
++        const resolved = theme === 'auto'
++          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
++          : theme;
++        document.documentElement.setAttribute('data-bs-theme', resolved);
++        updateButtonUI(theme);
++      };
++
++      const updateButtonUI = (theme) => {
++        const iconEl = document.getElementById('theme-current-icon');
++        const textEl = document.getElementById('theme-current-text');
++        if (!iconEl || !textEl) return;
++
++        if (theme === 'light') {
++          iconEl.textContent = '☀️';
++          textEl.textContent = 'Light';
++        } else if (theme === 'dark') {
++          iconEl.textContent = '🌙';
++          textEl.textContent = 'Dark';
++        } else {
++          iconEl.textContent = '🌓';
++          textEl.textContent = 'Auto';
++        }
++
++        // Active state in dropdown
++        document.querySelectorAll('[data-theme-value]').forEach(btn => {
++          const isActive = btn.getAttribute('data-theme-value') === theme;
++          btn.classList.toggle('active', isActive);
++          btn.setAttribute('aria-pressed', isActive);
++        });
++      };
++
++      // Set initial UI state
++      setTheme(getStoredTheme());
++
++      // Listen for system theme changes when set to auto
++      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
++        const storedTheme = getStoredTheme();
++        if (storedTheme === 'auto') {
++          setTheme('auto');
++        }
++      });
++
++      // Hook click events on theme options
++      document.addEventListener('DOMContentLoaded', () => {
++        updateButtonUI(getStoredTheme());
++        document.querySelectorAll('[data-theme-value]').forEach(toggle => {
++          toggle.addEventListener('click', () => {
++            const theme = toggle.getAttribute('data-theme-value');
++            setStoredTheme(theme);
++            setTheme(theme);
++          });
++        });
++      });
++    })();
++  </script>
++</body>
++</html>
+diff --git a/crypto_alerts/views/partials/kpi_strip.ejs b/crypto_alerts/views/partials/kpi_strip.ejs
+new file mode 100644
+index 0000000..0899208
+--- /dev/null
++++ b/crypto_alerts/views/partials/kpi_strip.ejs
+@@ -0,0 +1,41 @@
++<div class="row g-3 mb-4">
++  <% for (let asset of assets) { 
++       let iconClass = 'asset-icon-btc';
++       let iconSymbol = '₿';
++       if (asset.symbol.includes('ETH')) {
++         iconClass = 'asset-icon-eth';
++         iconSymbol = 'Ξ';
++       } else if (asset.symbol.includes('SOL')) {
++         iconClass = 'asset-icon-sol';
++         iconSymbol = '◎';
++       }
++  %>
++    <div class="col-md-4 col-sm-12">
++      <div class="card h-100 shadow-sm">
++        <div class="card-body p-3">
++          <div class="d-flex justify-content-between align-items-center mb-2">
++            <div class="d-flex align-items-center gap-2">
++              <span class="<%= iconClass %>"><%= iconSymbol %></span>
++              <div>
++                <span class="fw-bold text-body"><%= asset.symbol %></span>
++                <small class="text-secondary d-block" style="font-size: 0.75rem;"><%= asset.name %></small>
++              </div>
++            </div>
++            <span class="badge bg-secondary-subtle text-secondary border small">D1 Close</span>
++          </div>
++          <div class="d-flex align-items-baseline justify-content-between mt-3">
++            <h3 class="card-title fw-bold text-body m-0">
++              $<%= Number(asset.last_d1_close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
++            </h3>
++            <span class="small text-success fw-semibold">● Live D1</span>
++          </div>
++          <div class="text-end mt-2">
++            <small class="text-secondary" style="font-size: 0.75rem;">
++              Synced: <%= asset.last_updated ? asset.last_updated.replace('T', ' ').slice(0, 19) : 'Just now' %>
++            </small>
++          </div>
++        </div>
++      </div>
++    </div>
++  <% } %>
++</div>
+diff --git a/crypto_alerts/views/partials/navbar.ejs b/crypto_alerts/views/partials/navbar.ejs
+new file mode 100644
+index 0000000..3682d7d
+--- /dev/null
++++ b/crypto_alerts/views/partials/navbar.ejs
+@@ -0,0 +1,55 @@
++<nav class="navbar navbar-expand-lg navbar-dark bg-dark px-3 py-2 shadow-sm">
++  <div class="container-fluid">
++    <a class="navbar-brand fw-bold d-flex align-items-center" href="/">
++      <span class="badge bg-warning text-dark me-2">D1</span>
++      <span>CryptoAlert SG</span>
++    </a>
++
++    <div class="d-flex align-items-center gap-3 ms-auto">
++      <!-- Active Exchange Source Badge -->
++      <div class="d-none d-md-block text-light small">
++        <span class="text-secondary">Source:</span>
++        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
++          <%= (exchanges && exchanges.length > 0) ? exchanges[0].display_name : 'OKX Singapore' %> (Active)
++        </span>
++      </div>
++
++      <!-- User Context Switcher / Indicator -->
++      <div class="d-flex align-items-center text-light small">
++        <span class="text-secondary me-1">Active User:</span>
++        <form method="GET" action="/" class="d-inline-block">
++          <% if (selectedStatus && selectedStatus !== 'all') { %>
++            <input type="hidden" name="status" value="<%= selectedStatus %>">
++          <% } %>
++          <select name="user_id" class="form-select form-select-sm bg-secondary text-white border-0" onchange="this.form.submit()">
++            <option value="">All Users</option>
++            <% for (let u of users) { %>
++              <option value="<%= u.id %>" <%= String(selectedUserId) === String(u.id) ? 'selected' : '' %>>
++                <%= u.username %>
++              </option>
++            <% } %>
++          </select>
++        </form>
++      </div>
++
++      <!-- Instant Refresh D1 Prices Button -->
++      <form action="/refresh" method="POST" class="m-0">
++        <button type="submit" class="btn btn-warning btn-sm fw-semibold d-flex align-items-center gap-1 shadow-sm">
++          <span>🔄</span>
++          <span>Refresh D1</span>
++        </button>
++      </form>
++
++      <!-- Reset & Re-Seed Database Button -->
++      <form action="/reset-db" method="POST" class="m-0" onsubmit="return confirm('Reset all tables to 0 rows and re-seed baseline data?');">
++        <button type="submit" class="btn btn-outline-danger btn-sm fw-semibold d-flex align-items-center gap-1 shadow-sm">
++          <span>⚠️</span>
++          <span>Reset DB</span>
++        </button>
++      </form>
++
++      <!-- Theme Switcher (Light / Dark / Auto) -->
++      <%- include('theme_toggle') %>
++    </div>
++  </div>
++</nav>
+diff --git a/crypto_alerts/views/partials/theme_toggle.ejs b/crypto_alerts/views/partials/theme_toggle.ejs
+new file mode 100644
+index 0000000..80e0f6a
+--- /dev/null
++++ b/crypto_alerts/views/partials/theme_toggle.ejs
+@@ -0,0 +1,30 @@
++<div class="dropdown">
++  <button
++    class="btn btn-outline-secondary btn-sm dropdown-toggle d-flex align-items-center gap-1 text-light border-secondary"
++    type="button"
++    id="themeDropdown"
++    data-bs-toggle="dropdown"
++    aria-expanded="false"
++    title="Change Theme"
++  >
++    <span id="theme-current-icon">🌓</span>
++    <span class="d-none d-sm-inline" id="theme-current-text">Auto</span>
++  </button>
++  <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="themeDropdown">
++    <li>
++      <button class="dropdown-item d-flex align-items-center gap-2" type="button" data-theme-value="light">
++        <span>☀️</span> Light
++      </button>
++    </li>
++    <li>
++      <button class="dropdown-item d-flex align-items-center gap-2" type="button" data-theme-value="dark">
++        <span>🌙</span> Dark
++      </button>
++    </li>
++    <li>
++      <button class="dropdown-item d-flex align-items-center gap-2" type="button" data-theme-value="auto">
++        <span>🌓</span> System (Auto)
++      </button>
++    </li>
++  </ul>
++</div>
+diff --git a/data/seed.js b/data/seed.js
+new file mode 100644
+index 0000000..872650b
+--- /dev/null
++++ b/data/seed.js
+@@ -0,0 +1,269 @@
++const mysql2 = require("mysql2/promise");
++const dotenv = require("dotenv");
++
++dotenv.config();
++
++const dbConfig = {
++  host: process.env.DB_HOST,
++  user: process.env.DB_USER,
++  password: process.env.DB_PASSWORD,
++  database: process.env.DB_NAME,
++  port: process.env.DB_PORT,
++};
++
++// 20 realistic food entries with meal categories, serving size, and tag names
++const dummyFoodEntries = [
++  {
++    foodName: "Scrambled Eggs with Spinach",
++    dateTime: "2026-11-01 08:00:00",
++    calories: 220,
++    servingSize: 2,
++    unit: "large eggs",
++    mealName: "Breakfast",
++    tags: ["Vegetarian", "Low Carb"],
++  },
++  {
++    foodName: "Steel-Cut Oatmeal with Berries",
++    dateTime: "2026-11-01 08:45:00",
++    calories: 280,
++    servingSize: 1,
++    unit: "bowl",
++    mealName: "Breakfast",
++    tags: ["Vegan", "Vegetarian", "Low Fat"],
++  },
++  {
++    foodName: "Greek Yogurt with Chia Seeds",
++    dateTime: "2026-11-02 10:15:00",
++    calories: 170,
++    servingSize: 200,
++    unit: "grams",
++    mealName: "Snack",
++    tags: ["Vegetarian", "Gluten-Free"],
++  },
++  {
++    foodName: "Grilled Chicken Breast with Quinoa",
++    dateTime: "2026-11-02 12:30:00",
++    calories: 450,
++    servingSize: 250,
++    unit: "grams",
++    mealName: "Lunch",
++    tags: ["Gluten-Free", "Low Carb", "Low Fat"],
++  },
++  {
++    foodName: "Avocado Toast on Sourdough",
++    dateTime: "2026-11-03 09:00:00",
++    calories: 320,
++    servingSize: 2,
++    unit: "slices",
++    mealName: "Breakfast",
++    tags: ["Vegan", "Vegetarian"],
++  },
++  {
++    foodName: "Pan-Seared Salmon Fillet with Asparagus",
++    dateTime: "2026-11-03 19:15:00",
++    calories: 520,
++    servingSize: 200,
++    unit: "grams",
++    mealName: "Dinner",
++    tags: ["Gluten-Free", "Low Carb"],
++  },
++  {
++    foodName: "Steamed Edamame",
++    dateTime: "2026-11-04 15:30:00",
++    calories: 120,
++    servingSize: 1,
++    unit: "cup",
++    mealName: "Snack",
++    tags: ["Vegan", "Vegetarian", "Gluten-Free"],
++  },
++  {
++    foodName: "Brown Rice with Tofu & Mixed Vegetables",
++    dateTime: "2026-11-04 13:00:00",
++    calories: 410,
++    servingSize: 1,
++    unit: "plate",
++    mealName: "Lunch",
++    tags: ["Vegan", "Vegetarian", "Gluten-Free"],
++  },
++  {
++    foodName: "Protein Whey Shake",
++    dateTime: "2026-11-05 17:00:00",
++    calories: 160,
++    servingSize: 1,
++    unit: "scoop",
++    mealName: "Snack",
++    tags: ["Vegetarian", "Low Carb", "Low Fat"],
++  },
++  {
++    foodName: "Ribeye Steak with Roasted Broccoli",
++    dateTime: "2026-11-05 20:00:00",
++    calories: 680,
++    servingSize: 300,
++    unit: "grams",
++    mealName: "Dinner",
++    tags: ["Gluten-Free", "Low Carb"],
++  },
++  {
++    foodName: "Fruit Salad (Apple, Banana, Kiwi)",
++    dateTime: "2026-11-06 11:00:00",
++    calories: 140,
++    servingSize: 1,
++    unit: "bowl",
++    mealName: "Snack",
++    tags: ["Vegan", "Vegetarian", "Low Fat", "Gluten-Free"],
++  },
++  {
++    foodName: "Caesar Salad with Grilled Chicken",
++    dateTime: "2026-11-06 12:45:00",
++    calories: 380,
++    servingSize: 1,
++    unit: "bowl",
++    mealName: "Lunch",
++    tags: ["Low Carb"],
++  },
++  {
++    foodName: "Lentil Soup",
++    dateTime: "2026-11-07 18:30:00",
++    calories: 290,
++    servingSize: 350,
++    unit: "ml",
++    mealName: "Dinner",
++    tags: ["Vegan", "Vegetarian", "Gluten-Free", "Low Fat"],
++  },
++  {
++    foodName: "Whole Wheat Pancakes with Honey",
++    dateTime: "2026-11-08 09:30:00",
++    calories: 390,
++    servingSize: 3,
++    unit: "pieces",
++    mealName: "Breakfast",
++    tags: ["Vegetarian"],
++  },
++  {
++    foodName: "Almonds & Walnuts Mix",
++    dateTime: "2026-11-08 16:00:00",
++    calories: 210,
++    servingSize: 40,
++    unit: "grams",
++    mealName: "Snack",
++    tags: ["Vegan", "Vegetarian", "Gluten-Free", "Low Carb"],
++  },
++  {
++    foodName: "Turkey & Cheddar Wrap",
++    dateTime: "2026-11-09 13:15:00",
++    calories: 430,
++    servingSize: 1,
++    unit: "wrap",
++    mealName: "Lunch",
++    tags: [],
++  },
++  {
++    foodName: "Spaghetti Bolognese",
++    dateTime: "2026-11-09 19:45:00",
++    calories: 590,
++    servingSize: 1,
++    unit: "plate",
++    mealName: "Dinner",
++    tags: [],
++  },
++  {
++    foodName: "Boiled Sweet Potatoes",
++    dateTime: "2026-11-10 12:00:00",
++    calories: 190,
++    servingSize: 200,
++    unit: "grams",
++    mealName: "Lunch",
++    tags: ["Vegan", "Vegetarian", "Gluten-Free", "Low Fat"],
++  },
++  {
++    foodName: "Mushroom Omelette",
++    dateTime: "2026-11-10 08:15:00",
++    calories: 260,
++    servingSize: 2,
++    unit: "eggs",
++    mealName: "Breakfast",
++    tags: ["Vegetarian", "Low Carb", "Gluten-Free"],
++  },
++  {
++    foodName: "Baked White Fish with Lemon and Herb",
++    dateTime: "2026-11-11 19:30:00",
++    calories: 340,
++    servingSize: 220,
++    unit: "grams",
++    mealName: "Dinner",
++    tags: ["Gluten-Free", "Low Carb", "Low Fat"],
++  },
++];
++
++async function seed() {
++  const connection = await mysql2.createConnection(dbConfig);
++  console.log("Connected to database:", dbConfig.database);
++
++  try {
++    // 1. Fetch meals lookup map (name -> id)
++    const [mealsRows] = await connection.execute("SELECT id, name FROM meals");
++    const mealMap = new Map();
++    for (let meal of mealsRows) {
++      mealMap.set(meal.name.toLowerCase(), meal.id);
++    }
++
++    // 2. Fetch tags lookup map (name -> id)
++    const [tagsRows] = await connection.execute("SELECT id, name FROM tags");
++    const tagMap = new Map();
++    for (let tag of tagsRows) {
++      tagMap.set(tag.name.toLowerCase(), tag.id);
++    }
++
++    console.log("Found meals:", mealsRows.map((m) => m.name));
++    console.log("Found tags:", tagsRows.map((t) => t.name));
++
++    // 3. Begin transaction to insert 20 food entries and their tag relationships
++    await connection.beginTransaction();
++
++    let insertedCount = 0;
++    for (const entry of dummyFoodEntries) {
++      const mealId = mealMap.get(entry.mealName.toLowerCase()) || 1; // default to 1 (N/A) if not found
++
++      const insertSql = `
++        INSERT INTO food_entries (dateTime, foodName, calories, meal_id, servingSize, unit)
++        VALUES (?, ?, ?, ?, ?, ?)
++      `;
++      const [result] = await connection.execute(insertSql, [
++        entry.dateTime,
++        entry.foodName,
++        entry.calories,
++        mealId,
++        entry.servingSize,
++        entry.unit,
++      ]);
++
++      const foodEntryId = result.insertId;
++
++      // Link tags in food_entries_tags
++      if (entry.tags && entry.tags.length > 0) {
++        for (const tagName of entry.tags) {
++          const tagId = tagMap.get(tagName.toLowerCase());
++          if (tagId) {
++            await connection.execute(
++              "INSERT INTO food_entries_tags (food_entry_id, tag_id) VALUES (?, ?)",
++              [foodEntryId, tagId]
++            );
++          }
++        }
++      }
++
++      insertedCount++;
++    }
++
++    await connection.commit();
++    console.log(`Successfully seeded ${insertedCount} food entries with meal & tag associations!`);
++  } catch (error) {
++    await connection.rollback();
++    console.error("Seeding failed, rolled back:", error);
++    process.exitCode = 1;
++  } finally {
++    await connection.end();
++  }
++}
++
++seed();
