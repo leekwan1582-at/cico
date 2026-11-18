@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= pageTitle %></title>
+
+  <!-- Prevent Theme Flash (FOUC) by resolving theme immediately -->
+  <script>
+    (function() {
+      const storedTheme = localStorage.getItem('theme') || 'auto';
+      const resolvedTheme = storedTheme === 'auto'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : storedTheme;
+      document.documentElement.setAttribute('data-bs-theme', resolvedTheme);
+    })();
+  </script>
+
+  <!-- Bootstrap 5 CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  >
+  <!-- Custom Overrides -->
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <%- include('partials/navbar') %>
+
+  <!-- Main Container -->
+  <main class="container-fluid px-4 py-4">
+
+    <!-- KPI D1 Ticker Cards Strip -->
+    <%- include('partials/kpi_strip') %>
+
+    <!-- Option 1 Split-View Layout -->
+    <div class="row g-4">
+
+      <!-- LEFT COLUMN: Create / Edit Alert Panel (col-md-4) -->
+      <section class="col-lg-4 col-md-5 col-sm-12">
+        <div class="card shadow-sm">
+          <div class="card-header bg-body-tertiary py-3 border-bottom">
+            <h5 class="card-title fw-bold m-0 text-body">
+              <%= editAlert ? '✏️ Edit Price Alert' : '➕ Create Price Alert' %>
+            </h5>
+            <small class="text-secondary">
+              <%= editAlert ? 'Update threshold and conditions for alert #' + editAlert.id : 'Configure target price and trigger notification' %>
+            </small>
+          </div>
+          <div class="card-body p-3">
+            <form
+              method="POST"
+              action="<%= editAlert ? '/alerts/' + editAlert.id + '/update' : '/alerts' %>"
+              class="needs-validation"
+            >
+              <!-- Target User -->
+              <div class="mb-3">
+                <label for="user_id" class="form-label fw-semibold small">User Account</label>
+                <select name="user_id" id="user_id" class="form-select form-select-sm" required>
+                  <% for (let u of users) { %>
+                    <option
+                      value="<%= u.id %>"
+                      <%= (editAlert && editAlert.user_id === u.id) || (!editAlert && String(selectedUserId) === String(u.id)) ? 'selected' : '' %>
+                    >
+                      <%= u.username %> (<%= u.email %>)
+                    </option>
+                  <% } %>
+                </select>
+              </div>
+
+              <!-- Crypto Asset Dropdown -->
+              <div class="mb-3">
+                <label for="asset_id" class="form-label fw-semibold small">Crypto Asset</label>
+                <select name="asset_id" id="asset_id" class="form-select form-select-sm" required>
+                  <% for (let a of assets) { %>
+                    <option
+                      value="<%= a.id %>"
+                      <%= (editAlert && editAlert.asset_id === a.id) ? 'selected' : '' %>
+                    >
+                      <%= a.symbol %> — <%= a.name %> ($<%= Number(a.last_d1_close).toLocaleString('en-US') %>)
+                    </option>
+                  <% } %>
+                </select>
+              </div>
+
+              <!-- Exchange Selection -->
+              <div class="mb-3">
+                <label for="exchange_id" class="form-label fw-semibold small">Price Feed Exchange</label>
+                <select name="exchange_id" id="exchange_id" class="form-select form-select-sm" required>
+                  <% for (let ex of exchanges) { %>
+                    <option
+                      value="<%= ex.id %>"
+                      <%= (editAlert && editAlert.exchange_id === ex.id) ? 'selected' : '' %>
+                    >
+                      <%= ex.display_name %>
+                    </option>
+                  <% } %>
+                </select>
+              </div>
+
+              <!-- Trigger Condition Radio Buttons -->
+              <div class="mb-3">
+                <label class="form-label fw-semibold small d-block">Condition Trigger</label>
+                <div class="btn-group w-100" role="group">
+                  <input
+                    type="radio"
+                    class="btn-check"
+                    name="condition_type"
+                    id="condAbove"
+                    value="ABOVE"
+                    autocomplete="off"
+                    <%= (!editAlert || editAlert.condition_type === 'ABOVE') ? 'checked' : '' %>
+                  >
+                  <label class="btn btn-outline-success btn-sm" for="condAbove">📈 Price ABOVE (>=)</label>
+
+                  <input
+                    type="radio"
+                    class="btn-check"
+                    name="condition_type"
+                    id="condBelow"
+                    value="BELOW"
+                    autocomplete="off"
+                    <%= (editAlert && editAlert.condition_type === 'BELOW') ? 'checked' : '' %>
+                  >
+                  <label class="btn btn-outline-danger btn-sm" for="condBelow">📉 Price BELOW (<=)</label>
+                </div>
+              </div>
+
+              <!-- Target Price Input -->
+              <div class="mb-4">
+                <label for="target_price" class="form-label fw-semibold small">Target Price ($ USD)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    name="target_price"
+                    id="target_price"
+                    class="form-control"
+                    placeholder="e.g. 95000.00"
+                    value="<%= editAlert ? Number(editAlert.target_price) : '' %>"
+                    required
+                  >
+                </div>
+              </div>
+
+              <!-- Form Action Buttons -->
+              <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-grow-1 fw-semibold">
+                  <%= editAlert ? '💾 Update Alert' : '➕ Save Alert' %>
+                </button>
+                <% if (editAlert) { %>
+                  <a href="/" class="btn btn-outline-secondary btn-sm">Cancel</a>
+                <% } %>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: Watchlist Table & Filter Bar (col-md-8) -->
+      <section class="col-lg-8 col-md-7 col-sm-12">
+        <div class="card shadow-sm">
+
+          <!-- Filter Toolbar Header -->
+          <div class="card-header bg-body-tertiary py-3 border-bottom">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div>
+                <h5 class="card-title fw-bold m-0 text-body">📋 Price Alerts Watchlist</h5>
+                <small class="text-secondary"><%= alerts.length %> alerts matching current criteria</small>
+              </div>
+
+              <!-- Multi-Criteria Filter Bar (GET /) -->
+              <form method="GET" action="/" class="d-flex align-items-center gap-2 flex-wrap">
+                <!-- User Filter -->
+                <select name="user_id" class="form-select form-select-sm" style="width: auto;">
+                  <option value="">Filter by User (All)</option>
+                  <% for (let u of users) { %>
+                    <option value="<%= u.id %>" <%= String(selectedUserId) === String(u.id) ? 'selected' : '' %>>
+                      <%= u.username %>
+                    </option>
+                  <% } %>
+                </select>
+
+                <!-- Status Filter -->
+                <select name="status" class="form-select form-select-sm" style="width: auto;">
+                  <option value="all" <%= selectedStatus === 'all' ? 'selected' : '' %>>All Statuses</option>
+                  <option value="active" <%= selectedStatus === 'active' ? 'selected' : '' %>>🟢 Active</option>
+                  <option value="triggered" <%= selectedStatus === 'triggered' ? 'selected' : '' %>>🔴 Triggered</option>
+                </select>
+
+                <button type="submit" class="btn btn-outline-primary btn-sm">Filter</button>
+                <a href="/" class="btn btn-outline-secondary btn-sm">Reset</a>
+              </form>
+            </div>
+          </div>
+
+          <!-- Alerts Responsive Table -->
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col" class="ps-3">ID</th>
+                  <th scope="col">User</th>
+                  <th scope="col">Asset</th>
+                  <th scope="col">Exchange</th>
+                  <th scope="col">Condition</th>
+                  <th scope="col">Target ($)</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" class="text-end pe-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (alerts.length === 0) { %>
+                  <tr>
+                    <td colspan="8" class="text-center py-4 text-muted">
+                      No price alerts found matching the selected filters. Use the left panel to create one!
+                    </td>
+                  </tr>
+                <% } else { %>
+                  <% for (let alert of alerts) { %>
+                    <tr class="<%= alert.is_triggered ? 'table-danger-subtle' : '' %>">
+                      <td class="ps-3 fw-bold text-secondary">#<%= alert.id %></td>
+                      <td>
+                        <span class="fw-semibold"><%= alert.username %></span>
+                      </td>
+                      <td>
+                        <span class="badge bg-secondary-subtle text-secondary border">
+                          <%= alert.asset_symbol %>
+                        </span>
+                      </td>
+                      <td><small class="text-muted"><%= alert.exchange_name %></small></td>
+                      <td>
+                        <% if (alert.condition_type === 'ABOVE') { %>
+                          <span class="badge bg-success-subtle text-success border border-success-subtle">
+                            >= ABOVE
+                          </span>
+                        <% } else { %>
+                          <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                            <= BELOW
+                          </span>
+                        <% } %>
+                      </td>
+                      <td class="fw-bold text-body">
+                        $<%= Number(alert.target_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                      </td>
+                      <td>
+                        <% if (alert.is_triggered) { %>
+                          <span class="badge badge-triggered px-2 py-1">🔴 TRIGGERED</span>
+                        <% } else { %>
+                          <span class="badge badge-active px-2 py-1">🟢 ACTIVE</span>
+                        <% } %>
+                      </td>
+                      <td class="text-end pe-3">
+                        <div class="d-inline-flex gap-1">
+                          <!-- Edit Button -->
+                          <a
+                            href="/?edit_id=<%= alert.id %>&user_id=<%= selectedUserId %>&status=<%= selectedStatus %>"
+                            class="btn btn-outline-primary btn-sm py-0 px-2"
+                            title="Edit Alert"
+                          >
+                            Edit
+                          </a>
+
+                          <!-- Delete Button Form -->
+                          <form
+                            action="/alerts/<%= alert.id %>/delete"
+                            method="POST"
+                            class="d-inline m-0"
+                            onsubmit="return confirm('Are you sure you want to delete Alert #<%= alert.id %>?');"
+                          >
+                            <button
+                              type="submit"
+                              class="btn btn-outline-danger btn-sm py-0 px-2"
+                              title="Delete Alert"
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  <% } %>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+    crossorigin="anonymous"
+  ></script>
+
+  <!-- Theme Toggle Client Controller -->
+  <script>
+    (function() {
+      const getStoredTheme = () => localStorage.getItem('theme') || 'auto';
+      const setStoredTheme = (theme) => localStorage.setItem('theme', theme);
+
+      const getPreferredTheme = () => {
+        const storedTheme = getStoredTheme();
+        if (storedTheme !== 'auto') {
+          return storedTheme;
+        }
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      };
+
+      const setTheme = (theme) => {
+        const resolved = theme === 'auto'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : theme;
+        document.documentElement.setAttribute('data-bs-theme', resolved);
+        updateButtonUI(theme);
+      };
+
+      const updateButtonUI = (theme) => {
+        const iconEl = document.getElementById('theme-current-icon');
+        const textEl = document.getElementById('theme-current-text');
+        if (!iconEl || !textEl) return;
+
+        if (theme === 'light') {
+          iconEl.textContent = '☀️';
+          textEl.textContent = 'Light';
+        } else if (theme === 'dark') {
+          iconEl.textContent = '🌙';
+          textEl.textContent = 'Dark';
+        } else {
+          iconEl.textContent = '🌓';
+          textEl.textContent = 'Auto';
+        }
+
+        // Active state in dropdown
+        document.querySelectorAll('[data-theme-value]').forEach(btn => {
+          const isActive = btn.getAttribute('data-theme-value') === theme;
+          btn.classList.toggle('active', isActive);
+          btn.setAttribute('aria-pressed', isActive);
+        });
+      };
+
+      // Set initial UI state
+      setTheme(getStoredTheme());
+
+      // Listen for system theme changes when set to auto
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        const storedTheme = getStoredTheme();
+        if (storedTheme === 'auto') {
+          setTheme('auto');
+        }
+      });
+
+      // Hook click events on theme options
+      document.addEventListener('DOMContentLoaded', () => {
+        updateButtonUI(getStoredTheme());
+        document.querySelectorAll('[data-theme-value]').forEach(toggle => {
+          toggle.addEventListener('click', () => {
+            const theme = toggle.getAttribute('data-theme-value');
+            setStoredTheme(theme);
+            setTheme(theme);
+          });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

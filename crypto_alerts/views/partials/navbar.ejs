@@ -1,0 +1,55 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark px-3 py-2 shadow-sm">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold d-flex align-items-center" href="/">
+      <span class="badge bg-warning text-dark me-2">D1</span>
+      <span>CryptoAlert SG</span>
+    </a>
+
+    <div class="d-flex align-items-center gap-3 ms-auto">
+      <!-- Active Exchange Source Badge -->
+      <div class="d-none d-md-block text-light small">
+        <span class="text-secondary">Source:</span>
+        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+          <%= (exchanges && exchanges.length > 0) ? exchanges[0].display_name : 'OKX Singapore' %> (Active)
+        </span>
+      </div>
+
+      <!-- User Context Switcher / Indicator -->
+      <div class="d-flex align-items-center text-light small">
+        <span class="text-secondary me-1">Active User:</span>
+        <form method="GET" action="/" class="d-inline-block">
+          <% if (selectedStatus && selectedStatus !== 'all') { %>
+            <input type="hidden" name="status" value="<%= selectedStatus %>">
+          <% } %>
+          <select name="user_id" class="form-select form-select-sm bg-secondary text-white border-0" onchange="this.form.submit()">
+            <option value="">All Users</option>
+            <% for (let u of users) { %>
+              <option value="<%= u.id %>" <%= String(selectedUserId) === String(u.id) ? 'selected' : '' %>>
+                <%= u.username %>
+              </option>
+            <% } %>
+          </select>
+        </form>
+      </div>
+
+      <!-- Instant Refresh D1 Prices Button -->
+      <form action="/refresh" method="POST" class="m-0">
+        <button type="submit" class="btn btn-warning btn-sm fw-semibold d-flex align-items-center gap-1 shadow-sm">
+          <span>🔄</span>
+          <span>Refresh D1</span>
+        </button>
+      </form>
+
+      <!-- Reset & Re-Seed Database Button -->
+      <form action="/reset-db" method="POST" class="m-0" onsubmit="return confirm('Reset all tables to 0 rows and re-seed baseline data?');">
+        <button type="submit" class="btn btn-outline-danger btn-sm fw-semibold d-flex align-items-center gap-1 shadow-sm">
+          <span>⚠️</span>
+          <span>Reset DB</span>
+        </button>
+      </form>
+
+      <!-- Theme Switcher (Light / Dark / Auto) -->
+      <%- include('theme_toggle') %>
+    </div>
+  </div>
+</nav>
