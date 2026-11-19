@@ -1,3 +1,10 @@
+/**
+ * @file Crypto Daily Alerts Application Entry Point
+ * @description Configures Express application, middleware (static files, URL-encoded forms),
+ * EJS view engine, routes, 404 guard, and global error handling.
+ * @module index
+ */
+
 const express = require("express");
 const path = require("path");
 const dotenv = require("dotenv");

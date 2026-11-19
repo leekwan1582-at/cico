@@ -1,3 +1,10 @@
+/**
+ * @file CICO Food Entry Tracking Application
+ * @description Main application server for CICO (Calories In, Calories Out).
+ * Manages full CRUD operations for food entries with meal categories, serving units, and multi-tag associations.
+ * @module index
+ */
+
 const express = require("express");
 const mysql2 = require("mysql2/promise");
 const ejs = require("ejs");
@@ -28,9 +35,20 @@ const dbConfig = {
   port: process.env.DB_PORT,
 };
 
+/**
+ * MariaDB/MySQL connection pool for CICO.
+ * @type {import('mysql2/promise').Pool}
+ */
 const dbConnection = mysql2.createPool(dbConfig);
 
-// list the food entries
+/**
+ * Route: GET /
+ * @description Lists food entries matching optional search keyword, with associated meals and aggregated tags.
+ * @route GET /
+ * @param {import('express').Request} req - Express request object with optional query parameter `search`.
+ * @param {import('express').Response} res - Express response object rendering index view.
+ * @param {import('express').NextFunction} next - Express next middleware.
+ */
 app.get("/", async function (req, res, next) {
   try {
     const searchTerm = (req.query.search || "").trim();
@@ -58,7 +76,14 @@ app.get("/", async function (req, res, next) {
   }
 });
 
-// create food entry form
+/**
+ * Route: GET /food-entry/create
+ * @description Renders the create food entry form with meals and available tags for selection.
+ * @route GET /food-entry/create
+ * @param {import('express').Request} req - Express request.
+ * @param {import('express').Response} res - Express response rendering create-food-entry view.
+ * @param {import('express').NextFunction} next - Express next middleware.
+ */
 app.get("/food-entry/create", async function (req, res, next) {
   try {
     const [meals] = await dbConnection.execute("SELECT * FROM meals");
@@ -70,7 +95,14 @@ app.get("/food-entry/create", async function (req, res, next) {
   }
 });
 
-// insert food entry
+/**
+ * Route: POST /food-entry/create
+ * @description Creates a new food entry and inserts associated tag relationships inside an atomic transaction.
+ * @route POST /food-entry/create
+ * @param {import('express').Request} req - Express request body containing food entry details and selected tags.
+ * @param {import('express').Response} res - Express response object (redirects to /).
+ * @param {import('express').NextFunction} next - Express next middleware.
+ */
 app.post("/food-entry/create", async function (req, res, next) {
   const connection = await dbConnection.getConnection();
   try {
@@ -112,7 +144,14 @@ app.post("/food-entry/create", async function (req, res, next) {
   }
 });
 
-// edit the food entry
+/**
+ * Route: GET /food-entry/:id/edit
+ * @description Loads an existing food entry and renders the edit form populated with current values and related tags.
+ * @route GET /food-entry/:id/edit
+ * @param {import('express').Request} req - Express request with food entry ID in params.
+ * @param {import('express').Response} res - Express response rendering edit-food-entry view.
+ * @param {import('express').NextFunction} next - Express next middleware.
+ */
 app.get("/food-entry/:id/edit", async function (req, res, next) {
   try {
     const foodRecordID = parseInt(req.params.id, 10);
@@ -152,7 +191,14 @@ app.get("/food-entry/:id/edit", async function (req, res, next) {
   }
 });
 
-// update the food entry
+/**
+ * Route: POST /food-entry/:id/edit
+ * @description Updates an existing food entry and refreshes its tag associations inside an atomic transaction.
+ * @route POST /food-entry/:id/edit
+ * @param {import('express').Request} req - Express request with food entry ID in params and updated fields in body.
+ * @param {import('express').Response} res - Express response object (redirects to /).
+ * @param {import('express').NextFunction} next - Express next middleware.
+ */
 app.post("/food-entry/:id/edit", async function (req, res, next) {
   const foodEntryID = parseInt(req.params.id, 10);
   if (isNaN(foodEntryID) || foodEntryID <= 0) {
@@ -210,7 +256,14 @@ app.post("/food-entry/:id/edit", async function (req, res, next) {
     await connection.release();
   }
 });
-// delete the food entry
+/**
+ * Route: GET /food-entry/:id/delete
+ * @description Loads a food entry and renders the delete confirmation page.
+ * @route GET /food-entry/:id/delete
+ * @param {import('express').Request} req - Express request with entry ID in params.
+ * @param {import('express').Response} res - Express response rendering delete-food-entry view.
+ * @param {import('express').NextFunction} next - Express next middleware.
+ */
 app.get("/food-entry/:id/delete", async (req, res, next) => {
   try {
     const foodRecordID = parseInt(req.params.id, 10);
@@ -237,6 +290,14 @@ app.get("/food-entry/:id/delete", async (req, res, next) => {
   }
 });
 
+/**
+ * Route: POST /food-entry/:id/delete
+ * @description Deletes a food entry record from the database.
+ * @route POST /food-entry/:id/delete
+ * @param {import('express').Request} req - Express request with entry ID in params.
+ * @param {import('express').Response} res - Express response object (redirects to /).
+ * @param {import('express').NextFunction} next - Express next middleware.
+ */
 app.post("/food-entry/:id/delete", async (req, res, next) => {
   try {
     const foodRecordID = parseInt(req.params.id, 10);

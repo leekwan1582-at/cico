@@ -1,7 +1,20 @@
-// seed.js
+/**
+ * @file Database Seed Script
+ * @description Resets database tables and inserts baseline demo data for users, exchanges,
+ * crypto assets, and price alerts within an atomic transaction.
+ * @module seed
+ */
+
 const mysql = require("mysql2/promise");
 require("dotenv").config();
 
+/**
+ * Executes full database reset and seeds initial records.
+ *
+ * @async
+ * @returns {Promise<{ success: boolean }>} Resolves with success status.
+ * @throws {Error} Throws if database connection or queries fail; rolls back transaction on error.
+ */
 async function seedDatabase() {
   const connection = await mysql.createConnection({
     host: process.env.DB_HOST || "127.0.0.1",

@@ -1,12 +1,26 @@
+/**
+ * @file Market Price Service
+ * @description Handles multi-exchange price fetching (via CCXT), offline fallback snapshots,
+ * database updates for asset daily close prices, and automated price alert evaluation.
+ * @module services/priceService
+ */
+
 const fs = require("fs");
 const path = require("path");
 const ccxt = require("ccxt");
 const pool = require("../config/db");
 
+/**
+ * Absolute path to local fallback JSON snapshot for offline resilience.
+ * @type {string}
+ */
 const FALLBACK_PATH = path.join(__dirname, "..", "data", "fallback_d1.json");
 
 /**
- * Load offline snapshot fallback prices from JSON
+ * Loads offline snapshot fallback D1 close prices from disk.
+ * If file reading or parsing fails, returns safe hardcoded defaults.
+ *
+ * @returns {Record<string, number>} Map of crypto symbol to daily close price (e.g., { 'BTC/USDT': 89200.0 })
  */
 function loadFallbackPrices() {
   try {
@@ -23,8 +37,12 @@ function loadFallbackPrices() {
 }
 
 /**
- * Attempt to fetch daily (1d) close price using CCXT for an exchange and symbol.
- * Returns null if network fails or exchange is geo-blocked.
+ * Attempts to fetch the daily (1d) close price using CCXT for a specific exchange and asset symbol.
+ *
+ * @async
+ * @param {string} ccxtId - Unique identifier of the exchange in CCXT (e.g., 'okx', 'binance').
+ * @param {string} symbol - Unified cryptocurrency pair symbol (e.g., 'BTC/USDT').
+ * @returns {Promise<number|null>} Resolves with the latest daily close price, or null if network fails/geo-blocked.
  */
 async function fetchD1PriceFromExchange(ccxtId, symbol) {
   try {
@@ -50,15 +68,16 @@ async function fetchD1PriceFromExchange(ccxtId, symbol) {
 }
 
 /**
- * Refresh daily close prices for all assets in the database,
+ * Refreshes daily close prices for all assets in the database,
  * prioritizing active exchanges (OKX -> Binance), falling back to offline JSON if needed,
- * and re-evaluating price alert triggers.
+ * and re-evaluating price alert triggers based on target conditions.
  *
+ * @async
  * @returns {Promise<{
  *   sourceUsed: string,
- *   updatedAssets: Array<{ symbol: string, price: number }>,
+ *   updatedAssets: Array<{ symbol: string, price: number, source: string }>,
  *   triggeredCount: number
- * }>}
+ * }>} Summary object detailing the active data source, updated assets, and count of triggered alerts.
  */
 async function refreshAllPrices() {
   const fallbackPrices = loadFallbackPrices();

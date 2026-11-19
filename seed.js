@@ -1,3 +1,10 @@
+/**
+ * @file CICO Database Seeder
+ * @description Seeds the CICO database with realistic sample food entries, meals, and multi-tag associations
+ * within an atomic database transaction.
+ * @module seed
+ */
+
 const mysql2 = require("mysql2/promise");
 const dotenv = require("dotenv");
 
@@ -11,7 +18,10 @@ const dbConfig = {
   port: process.env.DB_PORT,
 };
 
-// 20 realistic food entries with meal categories, serving size, and tag names
+/**
+ * Array of sample food entries for database seeding.
+ * @type {Array<{ foodName: string, dateTime: string, calories: number, servingSize: number, unit: string, mealName: string, tags: string[] }>}
+ */
 const dummyFoodEntries = [
   {
     foodName: "Scrambled Eggs with Spinach",
@@ -195,6 +205,12 @@ const dummyFoodEntries = [
   },
 ];
 
+/**
+ * Populates meals, tags, and food entry records within an atomic transaction.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 async function seed() {
   const connection = await mysql2.createConnection(dbConfig);
   console.log("Connected to database:", dbConfig.database);

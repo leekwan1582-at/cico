@@ -1,3 +1,10 @@
+/**
+ * @file Alert and Market Dashboard Routes
+ * @description Express routing module managing CRUD operations for price alerts,
+ * filtering criteria (user, status), pre-population for edits, price refreshes, and database resets.
+ * @module routes/alertRoutes
+ */
+
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
@@ -5,11 +12,15 @@ const priceService = require("../services/priceService");
 const seedModule = require("../seed");
 
 /**
- * GET /
- * Loads Split-View dashboard with optional multi-criteria filters:
- * - user_id (e.g. 1 or 2)
- * - status ('active' -> is_triggered=0, 'triggered' -> is_triggered=1, 'all' -> any)
- * - edit_id (pre-populates the left-column form for updating)
+ * Route: GET /
+ * @description Loads the main Split-View dashboard with optional multi-criteria filters:
+ * - `user_id`: Filter alerts by user ID.
+ * - `status`: Filter by status ('active' -> is_triggered=0, 'triggered' -> is_triggered=1, 'all' -> all).
+ * - `edit_id`: Pre-populates the left-column form with existing alert details for modification.
+ * @route GET /
+ * @param {import('express').Request} req - Express request object.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express next middleware function.
  */
 router.get("/", async (req, res, next) => {
   try {
@@ -95,8 +106,12 @@ router.get("/", async (req, res, next) => {
 });
 
 /**
- * POST /alerts
- * Creates a new price alert record
+ * Route: POST /alerts
+ * @description Validates input and creates a new price alert record wrapped inside an atomic transaction.
+ * @route POST /alerts
+ * @param {import('express').Request} req - Express request with body containing user_id, asset_id, exchange_id, target_price, condition_type.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express next middleware function.
  */
 router.post("/alerts", async (req, res, next) => {
   try {
@@ -140,8 +155,12 @@ router.post("/alerts", async (req, res, next) => {
 });
 
 /**
- * POST /alerts/:id/update
- * Updates an existing price alert and resets triggered status
+ * Route: POST /alerts/:id/update
+ * @description Updates an existing price alert's parameters and resets its triggered status to FALSE.
+ * @route POST /alerts/:id/update
+ * @param {import('express').Request} req - Express request containing alert ID in params and updated fields in body.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express next middleware function.
  */
 router.post("/alerts/:id/update", async (req, res, next) => {
   try {
@@ -191,8 +210,12 @@ router.post("/alerts/:id/update", async (req, res, next) => {
 });
 
 /**
- * POST /alerts/:id/delete
- * Deletes a price alert record
+ * Route: POST /alerts/:id/delete
+ * @description Deletes an existing price alert record by ID.
+ * @route POST /alerts/:id/delete
+ * @param {import('express').Request} req - Express request containing alert ID in params.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express next middleware function.
  */
 router.post("/alerts/:id/delete", async (req, res, next) => {
   try {
@@ -214,8 +237,13 @@ router.post("/alerts/:id/delete", async (req, res, next) => {
 });
 
 /**
- * POST /refresh
- * Triggers batch price refresh across all assets and evaluates alerts
+ * Route: POST /refresh
+ * @description Triggers a batch price refresh across all active assets via CCXT/fallback
+ * and automatically evaluates price alert trigger states.
+ * @route POST /refresh
+ * @param {import('express').Request} req - Express request object.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express next middleware function.
  */
 router.post("/refresh", async (req, res, next) => {
   try {
@@ -228,8 +256,12 @@ router.post("/refresh", async (req, res, next) => {
 });
 
 /**
- * POST /reset-db
- * Drops all records (0 rows) and re-seeds baseline data
+ * Route: POST /reset-db
+ * @description Truncates/clears all records across all tables and re-seeds baseline data in an atomic transaction.
+ * @route POST /reset-db
+ * @param {import('express').Request} req - Express request object.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express next middleware function.
  */
 router.post("/reset-db", async (req, res, next) => {
   try {
