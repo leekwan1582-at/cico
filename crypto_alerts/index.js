@@ -13,11 +13,13 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 const alertRoutes = require("./routes/alertRoutes");
+const schedulerService = require("./services/schedulerService");
 
 const app = express();
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Middleware for parsing form inputs and static assets
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -46,6 +48,8 @@ app.use((err, req, res, next) => {
 if (require.main === module) {
   app.listen(port, "0.0.0.0", () => {
     console.log(`Crypto Alerts server listening at http://0.0.0.0:${port}`);
+    // Start automated cron background price polling
+    schedulerService.startScheduler();
   });
 }
 

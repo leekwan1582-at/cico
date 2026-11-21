@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="100%" height="100%" style="background:#0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 820" width="100%" height="100%" style="background:#0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
   <defs>
     <!-- Card shadow and gradients -->
     <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
@@ -20,6 +20,14 @@
       <stop offset="0%" stop-color="#f59e0b"/>
       <stop offset="100%" stop-color="#d97706"/>
     </linearGradient>
+    <linearGradient id="headerOHLCV" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="headerWatchlist" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#be185d"/>
+    </linearGradient>
     
     <!-- Crow's foot markers -->
     <marker id="crow" viewBox="0 0 16 16" refX="16" refY="8" markerWidth="14" markerHeight="14" orient="auto-start-reverse">
@@ -32,80 +40,138 @@
   </defs>
 
   <!-- Title & Subtitle -->
-  <text x="480" y="38" text-anchor="middle" fill="#f8fafc" font-size="20" font-weight="700" letter-spacing="0.5">CRYPTO_ALERTS RELATIONAL DATABASE SCHEMA</text>
-  <text x="480" y="60" text-anchor="middle" fill="#94a3b8" font-size="13">Entity Relationship Diagram (Crow's Foot Notation) — 4 Normalized Tables (InnoDB / MySQL 8.x)</text>
+  <text x="590" y="38" text-anchor="middle" fill="#f8fafc" font-size="22" font-weight="700" letter-spacing="0.5">CRYPTO_ALERTS RELATIONAL DATABASE SCHEMA</text>
+  <text x="590" y="62" text-anchor="middle" fill="#94a3b8" font-size="13">Entity Relationship Diagram (Crow's Foot Notation) — 6 Normalized Tables (InnoDB / MariaDB / MySQL 8.x)</text>
 
   <!-- TABLE 1: USERS -->
   <g transform="translate(40, 90)" filter="url(#shadow)">
-    <rect width="250" height="190" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
-    <path d="M 0 10 Q 0 0 10 0 L 240 0 Q 250 0 250 10 L 250 42 L 0 42 Z" fill="url(#headerUsers)"/>
-    <text x="125" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">users</text>
+    <rect width="260" height="260" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 250 0 Q 260 0 260 10 L 260 42 L 0 42 Z" fill="url(#headerUsers)"/>
+    <text x="130" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">users</text>
     <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
       <text y="0" font-weight="700" fill="#60a5fa">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
-      <text y="28">username <tspan fill="#94a3b8">VARCHAR(50) UQ</tspan></text>
-      <text y="56">email <tspan fill="#94a3b8">VARCHAR(100) UQ</tspan></text>
-      <text y="84">created_at <tspan fill="#94a3b8">DATETIME</tspan></text>
+      <text y="26">username <tspan fill="#94a3b8">VARCHAR(50) UQ</tspan></text>
+      <text y="52">email <tspan fill="#94a3b8">VARCHAR(100) UQ</tspan></text>
+      <text y="78">password_hash <tspan fill="#94a3b8">VARCHAR(255)</tspan></text>
+      <text y="104">password_salt <tspan fill="#94a3b8">VARCHAR(64)</tspan></text>
+      <text y="130">role <tspan fill="#94a3b8">VARCHAR(20) DEFAULT 'trader'</tspan></text>
+      <text y="156">must_change_password <tspan fill="#94a3b8">BOOLEAN</tspan></text>
+      <text y="182">created_at <tspan fill="#94a3b8">DATETIME</tspan></text>
+    </g>
+  </g>
+
+  <!-- TABLE 6: USER_WATCHLIST (Join Table) -->
+  <g transform="translate(40, 420)" filter="url(#shadow)">
+    <rect width="260" height="170" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 250 0 Q 260 0 260 10 L 260 42 L 0 42 Z" fill="url(#headerWatchlist)"/>
+    <text x="130" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">user_watchlist</text>
+    <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
+      <text y="0" font-weight="700" fill="#f472b6">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
+      <text y="26" font-weight="600" fill="#60a5fa">user_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="52" font-weight="600" fill="#22d3ee">asset_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="78">created_at <tspan fill="#94a3b8">DATETIME</tspan></text>
     </g>
   </g>
 
   <!-- TABLE 2: EXCHANGES -->
-  <g transform="translate(40, 340)" filter="url(#shadow)">
-    <rect width="250" height="220" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
-    <path d="M 0 10 Q 0 0 10 0 L 240 0 Q 250 0 250 10 L 250 42 L 0 42 Z" fill="url(#headerExchanges)"/>
-    <text x="125" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">exchanges</text>
+  <g transform="translate(40, 630)" filter="url(#shadow)">
+    <rect width="260" height="170" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 250 0 Q 260 0 260 10 L 260 42 L 0 42 Z" fill="url(#headerExchanges)"/>
+    <text x="130" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">exchanges</text>
     <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
       <text y="0" font-weight="700" fill="#a78bfa">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
-      <text y="28">ccxt_id <tspan fill="#94a3b8">VARCHAR(30) UQ</tspan></text>
-      <text y="56">display_name <tspan fill="#94a3b8">VARCHAR(50)</tspan></text>
-      <text y="84">is_active <tspan fill="#94a3b8">BOOLEAN (T/F)</tspan></text>
-      <text y="112">priority_order <tspan fill="#94a3b8">INT UNSIGNED</tspan></text>
+      <text y="26">ccxt_id <tspan fill="#94a3b8">VARCHAR(30) UQ</tspan></text>
+      <text y="52">display_name <tspan fill="#94a3b8">VARCHAR(50)</tspan></text>
+      <text y="78">is_active <tspan fill="#94a3b8">BOOLEAN (T/F)</tspan></text>
+    </g>
+  </g>
+
+  <!-- TABLE 4: PRICE_ALERTS (CENTRAL TRANSACTION ENTITY) -->
+  <g transform="translate(440, 90)" filter="url(#shadow)">
+    <rect width="300" height="420" rx="10" fill="#1e293b" stroke="#f59e0b" stroke-width="2"/>
+    <path d="M 0 10 Q 0 0 10 0 L 290 0 Q 300 0 300 10 L 300 42 L 0 42 Z" fill="url(#headerAlerts)"/>
+    <text x="150" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">price_alerts</text>
+    <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
+      <text y="0" font-weight="700" fill="#fbbf24">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
+      <text y="26" font-weight="600" fill="#60a5fa">user_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="52" font-weight="600" fill="#22d3ee">asset_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="78" font-weight="600" fill="#a78bfa">exchange_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="104">target_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="130">reference_baseline <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="156">peak_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="182">condition_type <tspan fill="#94a3b8">VARCHAR(30)</tspan></text>
+      <text y="208">condition_metric <tspan fill="#94a3b8">VARCHAR(20)</tspan></text>
+      <text y="234">is_triggered <tspan fill="#94a3b8">BOOLEAN (T/F)</tspan></text>
+      <text y="260">notification_channel <tspan fill="#94a3b8">VARCHAR(20)</tspan></text>
+      <text y="286">recipient_target <tspan fill="#94a3b8">VARCHAR(255)</tspan></text>
+      <text y="312">triggered_at <tspan fill="#94a3b8">DATETIME</tspan></text>
+      <text y="338">created_at <tspan fill="#94a3b8">DATETIME</tspan></text>
     </g>
   </g>
 
   <!-- TABLE 3: ASSETS -->
-  <g transform="translate(670, 90)" filter="url(#shadow)">
-    <rect width="250" height="220" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
-    <path d="M 0 10 Q 0 0 10 0 L 240 0 Q 250 0 250 10 L 250 42 L 0 42 Z" fill="url(#headerAssets)"/>
-    <text x="125" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">assets</text>
+  <g transform="translate(880, 90)" filter="url(#shadow)">
+    <rect width="260" height="260" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 250 0 Q 260 0 260 10 L 260 42 L 0 42 Z" fill="url(#headerAssets)"/>
+    <text x="130" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">assets</text>
     <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
       <text y="0" font-weight="700" fill="#22d3ee">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
-      <text y="28">symbol <tspan fill="#94a3b8">VARCHAR(20) UQ</tspan></text>
-      <text y="56">name <tspan fill="#94a3b8">VARCHAR(50)</tspan></text>
-      <text y="84">last_d1_close <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
-      <text y="112">last_updated <tspan fill="#94a3b8">DATETIME</tspan></text>
+      <text y="26">symbol <tspan fill="#94a3b8">VARCHAR(20) UQ</tspan></text>
+      <text y="52">name <tspan fill="#94a3b8">VARCHAR(50)</tspan></text>
+      <text y="78">last_d1_close <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="104">prev_d1_close <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="130">change_24h_pct <tspan fill="#94a3b8">DECIMAL(8,4)</tspan></text>
+      <text y="156">last_updated <tspan fill="#94a3b8">DATETIME</tspan></text>
     </g>
   </g>
 
-  <!-- TABLE 4: PRICE_ALERTS (CENTRAL JUNCTION / TRANSACTION ENTITY) -->
-  <g transform="translate(345, 230)" filter="url(#shadow)">
-    <rect width="270" height="300" rx="10" fill="#1e293b" stroke="#f59e0b" stroke-width="2"/>
-    <path d="M 0 10 Q 0 0 10 0 L 260 0 Q 270 0 270 10 L 270 42 L 0 42 Z" fill="url(#headerAlerts)"/>
-    <text x="135" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">price_alerts</text>
+  <!-- TABLE 5: ASSET_OHLCV -->
+  <g transform="translate(680, 520)" filter="url(#shadow)">
+    <rect width="280" height="280" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <path d="M 0 10 Q 0 0 10 0 L 270 0 Q 280 0 280 10 L 280 42 L 0 42 Z" fill="url(#headerOHLCV)"/>
+    <text x="140" y="27" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">asset_ohlcv</text>
     <g transform="translate(14, 65)" font-size="12" fill="#e2e8f0">
-      <text y="0" font-weight="700" fill="#fbbf24">id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (PK)</tspan></text>
-      <text y="28" font-weight="600" fill="#60a5fa">user_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
-      <text y="56" font-weight="600" fill="#22d3ee">asset_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
-      <text y="84" font-weight="600" fill="#a78bfa">exchange_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
-      <text y="112">target_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
-      <text y="140">condition_type <tspan fill="#94a3b8">VARCHAR(10)</tspan></text>
-      <text y="168">is_triggered <tspan fill="#94a3b8">BOOLEAN (T/F)</tspan></text>
-      <text y="196">created_at <tspan fill="#94a3b8">DATETIME</tspan></text>
+      <text y="0" font-weight="700" fill="#34d399">id <tspan fill="#94a3b8" font-weight="normal">BIGINT UNSIGNED (PK)</tspan></text>
+      <text y="26" font-weight="600" fill="#22d3ee">asset_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="52" font-weight="600" fill="#a78bfa">exchange_id <tspan fill="#94a3b8" font-weight="normal">INT UNSIGNED (FK)</tspan></text>
+      <text y="78">candle_time <tspan fill="#94a3b8">DATE</tspan></text>
+      <text y="104">open_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="130">high_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="156">low_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="182">close_price <tspan fill="#94a3b8">DECIMAL(18,8)</tspan></text>
+      <text y="208">volume <tspan fill="#94a3b8">DECIMAL(24,8)</tspan></text>
     </g>
   </g>
 
   <!-- RELATIONSHIP PATHS WITH CROW'S FOOT NOTATION -->
-  <!-- 1. users (1) to price_alerts (M) -->
-  <path d="M 290 185 L 345 285" fill="none" stroke="#60a5fa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
-  <text x="325" y="225" fill="#93c5fd" font-size="11" font-weight="600">creates (1:N)</text>
+  <!-- 1. users (1) to price_alerts (N) -->
+  <path d="M 300 200 L 440 200" fill="none" stroke="#60a5fa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="370" y="190" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">creates</text>
 
-  <!-- 2. exchanges (1) to price_alerts (M) -->
-  <path d="M 290 450 L 345 420" fill="none" stroke="#a78bfa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
-  <text x="290" y="420" fill="#c4b5fd" font-size="11" font-weight="600">priced_on (1:N)</text>
+  <!-- 2. users (1) to user_watchlist (N) -->
+  <path d="M 170 350 L 170 420" fill="none" stroke="#60a5fa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="180" y="390" fill="#93c5fd" font-size="11" font-weight="600">tracks</text>
 
-  <!-- 3. assets (1) to price_alerts (M) -->
-  <path d="M 670 200 L 615 310" fill="none" stroke="#22d3ee" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
-  <text x="635" y="245" fill="#67e8f9" font-size="11" font-weight="600">monitored_in (1:N)</text>
+  <!-- 3. assets (1) to price_alerts (N) -->
+  <path d="M 880 200 L 740 200" fill="none" stroke="#22d3ee" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="810" y="190" fill="#67e8f9" font-size="11" font-weight="600" text-anchor="middle">monitored_in</text>
+
+  <!-- 4. assets (1) to asset_ohlcv (N) -->
+  <path d="M 950 350 L 950 480 L 850 520" fill="none" stroke="#22d3ee" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="960" y="440" fill="#67e8f9" font-size="11" font-weight="600">has_candles</text>
+
+  <!-- 5. assets (1) to user_watchlist (N) -->
+  <path d="M 880 320 L 580 320 L 580 470 L 300 470" fill="none" stroke="#22d3ee" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="440" y="460" fill="#67e8f9" font-size="11" font-weight="600" text-anchor="middle">watched_by</text>
+
+  <!-- 6. exchanges (1) to price_alerts (N) -->
+  <path d="M 300 680 L 460 680 L 460 510" fill="none" stroke="#a78bfa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="400" y="670" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">priced_on</text>
+
+  <!-- 7. exchanges (1) to asset_ohlcv (N) -->
+  <path d="M 300 740 L 680 740" fill="none" stroke="#a78bfa" stroke-width="2.2" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="490" y="730" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">recorded_on</text>
 
   <!-- FOOTER -->
-  <text x="480" y="590" text-anchor="middle" fill="#64748b" font-size="11">Generated for BELLS Course Assessment Submission • CICO / Crypto Daily Alerts</text>
+  <text x="590" y="795" text-anchor="middle" fill="#64748b" font-size="11">BELLS Course Assessment Submission • Cryptocurrency Price Alert &amp; Market Tracking Dashboard</text>
 </svg>

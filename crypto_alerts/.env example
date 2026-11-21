@@ -1,5 +1,0 @@
-DB_NAME=crypto_alerts_db
-DB_HOST=127.0.0.1
-DB_USER=
-DB_PASSWORD=
-DB_PORT=3306

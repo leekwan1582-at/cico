@@ -1,55 +1,171 @@
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark px-3 py-2 shadow-sm">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark px-3 py-2 shadow-sm sticky-top">
   <div class="container-fluid">
-    <a class="navbar-brand fw-bold d-flex align-items-center" href="/">
+    <a class="navbar-brand fw-bold d-flex align-items-center me-3" href="/">
       <span class="badge bg-warning text-dark me-2">D1</span>
       <span>CryptoAlert SG</span>
     </a>
 
-    <div class="d-flex align-items-center gap-3 ms-auto">
-      <!-- Active Exchange Source Badge -->
-      <div class="d-none d-md-block text-light small">
-        <span class="text-secondary">Source:</span>
-        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
-          <%= (exchanges && exchanges.length > 0) ? exchanges[0].display_name : 'OKX Singapore' %> (Active)
+    <!-- Mobile-visible controls: Active Exchange Source & Theme Toggle -->
+    <div class="d-flex align-items-center gap-2 d-lg-none ms-auto me-2">
+      <div class="text-light small">
+        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1" style="font-size: 0.72rem;">
+          <%= (exchanges && exchanges.length > 0) ? exchanges[0].display_name.split(' ')[0] : 'OKX' %>
         </span>
       </div>
-
-      <!-- User Context Switcher / Indicator -->
-      <div class="d-flex align-items-center text-light small">
-        <span class="text-secondary me-1">Active User:</span>
-        <form method="GET" action="/" class="d-inline-block">
-          <% if (selectedStatus && selectedStatus !== 'all') { %>
-            <input type="hidden" name="status" value="<%= selectedStatus %>">
-          <% } %>
-          <select name="user_id" class="form-select form-select-sm bg-secondary text-white border-0" onchange="this.form.submit()">
-            <option value="">All Users</option>
-            <% for (let u of users) { %>
-              <option value="<%= u.id %>" <%= String(selectedUserId) === String(u.id) ? 'selected' : '' %>>
-                <%= u.username %>
-              </option>
-            <% } %>
-          </select>
-        </form>
-      </div>
-
-      <!-- Instant Refresh D1 Prices Button -->
-      <form action="/refresh" method="POST" class="m-0">
-        <button type="submit" class="btn btn-warning btn-sm fw-semibold d-flex align-items-center gap-1 shadow-sm">
-          <span>🔄</span>
-          <span>Refresh D1</span>
-        </button>
-      </form>
-
-      <!-- Reset & Re-Seed Database Button -->
-      <form action="/reset-db" method="POST" class="m-0" onsubmit="return confirm('Reset all tables to 0 rows and re-seed baseline data?');">
-        <button type="submit" class="btn btn-outline-danger btn-sm fw-semibold d-flex align-items-center gap-1 shadow-sm">
-          <span>⚠️</span>
-          <span>Reset DB</span>
-        </button>
-      </form>
-
-      <!-- Theme Switcher (Light / Dark / Auto) -->
       <%- include('theme_toggle') %>
+    </div>
+
+    <!-- Hamburger Navbar Toggler for Mobile -->
+    <button
+      class="navbar-toggler border-secondary-subtle py-1 px-2"
+      type="button"
+      data-bs-toggle="collapse"
+      data-bs-target="#navbarMainCollapse"
+      aria-controls="navbarMainCollapse"
+      aria-expanded="false"
+      aria-label="Toggle navigation menu"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <!-- Collapsible Navigation Drawer -->
+    <div class="collapse navbar-collapse mt-2 mt-lg-0" id="navbarMainCollapse">
+      <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2 gap-lg-3 ms-lg-auto">
+
+        <!-- Active Exchange Source Badge (Desktop) -->
+        <div class="d-none d-lg-block text-light small me-1">
+          <span class="text-secondary">Source:</span>
+          <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+            <%= (exchanges && exchanges.length > 0) ? exchanges[0].display_name : 'OKX Singapore' %> (Active)
+          </span>
+        </div>
+
+        <!-- Authenticated User Profile Menu -->
+        <% if (locals.currentUser) { %>
+          <div class="dropdown">
+            <button
+              class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-2 py-1 px-2 text-body bg-secondary-subtle border-secondary w-100 justify-content-between justify-content-lg-start"
+              type="button"
+              id="userMenuDropdown"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <span class="d-flex align-items-center gap-1">
+                <span>👤</span>
+                <strong class="text-body"><%= locals.currentUser.username %></strong>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size: 0.65rem;">
+                  <%= locals.currentUser.role || 'TRADER' %>
+                </span>
+              </span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="userMenuDropdown">
+              <li>
+                <button type="button" id="btnUserProfile" class="dropdown-item d-flex align-items-center gap-2">
+                  <span>⚙️</span> Edit Profile
+                </button>
+              </li>
+              <li>
+                <button type="button" id="btnNavNotifPref" class="dropdown-item d-flex align-items-center gap-2">
+                  <span>🔔</span> Alert Preferences
+                </button>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <form action="/logout" method="POST" class="m-0">
+                  <button type="submit" class="dropdown-item text-danger d-flex align-items-center gap-2">
+                    <span>🚪</span> Sign Out
+                  </button>
+                </form>
+              </li>
+            </ul>
+          </div>
+        <% } %>
+
+        <!-- Trader Actions: Refresh, Watchlist & Health -->
+        <div class="d-flex flex-column flex-lg-row gap-2">
+          <!-- Instant Refresh D1 Prices Button -->
+          <form action="/refresh" method="POST" class="m-0">
+            <button type="submit" class="btn btn-warning btn-sm fw-semibold w-100 d-flex align-items-center justify-content-center gap-1 shadow-sm">
+              <span>🔄</span>
+              <span>Refresh D1</span>
+            </button>
+          </form>
+
+          <!-- Manage Watchlist Button -->
+          <button
+            id="btnNavWatchlist"
+            type="button"
+            class="btn btn-outline-light btn-sm fw-semibold d-flex align-items-center justify-content-center gap-1 shadow-sm"
+            title="Manage Cryptocurrency Watchlist"
+          >
+            <span>🪙</span>
+            <span>Watchlist</span>
+          </button>
+
+          <!-- System Health Monitor Trigger Button -->
+          <button
+            id="btnShowHealthModal"
+            type="button"
+            class="btn btn-outline-info btn-sm fw-semibold d-flex align-items-center justify-content-center gap-1 shadow-sm"
+            title="View System Health & Status"
+          >
+            <span>🩺</span>
+            <span>Health</span>
+          </button>
+        </div>
+
+        <!-- Admin Dropdown Group (Visible only to ADMIN users) -->
+        <% if (locals.currentUser && locals.currentUser.role === 'ADMIN') { %>
+          <div class="dropdown">
+            <button
+              class="btn btn-outline-danger btn-sm dropdown-toggle fw-semibold d-flex align-items-center justify-content-center gap-1 w-100 shadow-sm"
+              type="button"
+              id="adminMenuDropdown"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              title="Administrator Controls"
+            >
+              <span>🛡️</span>
+              <span>Admin</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="adminMenuDropdown">
+              <li class="dropdown-header text-uppercase small fw-bold text-danger">Administration</li>
+              <li>
+                <button
+                  type="button"
+                  id="btnNavExchanges"
+                  class="dropdown-item d-flex align-items-center gap-2"
+                >
+                  <span>🏦</span> Manage Exchanges
+                </button>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <button
+                  type="button"
+                  id="btnNavResetDb"
+                  class="dropdown-item text-danger d-flex align-items-center gap-2"
+                >
+                  <span>⚠️</span> Reset & Re-Seed Database
+                </button>
+              </li>
+            </ul>
+          </div>
+        <% } %>
+
+        <!-- Unauthenticated Sign In Button -->
+        <% if (!locals.currentUser) { %>
+          <div class="pt-2 pt-lg-0 border-top border-secondary-subtle border-lg-0">
+            <a href="/login" class="btn btn-outline-warning btn-sm w-100">Sign In</a>
+          </div>
+        <% } %>
+
+        <!-- Theme Switcher (Desktop) -->
+        <div class="d-none d-lg-block">
+          <%- include('theme_toggle') %>
+        </div>
+
+      </div>
     </div>
   </div>
 </nav>

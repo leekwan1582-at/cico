@@ -1,15 +1,17 @@
 {
   "name": "crypto_alerts",
   "version": "1.0.0",
-  "description": "",
+  "description": "Cryptocurrency Price Alert & Market Tracking Dashboard with multi-exchange D1 sync, technical indicators, and notifications",
   "main": "index.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "seed": "node seed.js",
-    "dev": "nodemon index.js"
+    "migrate": "node seed.js",
+    "seed": "node seed.js"
   },
   "keywords": [],
   "author": "",

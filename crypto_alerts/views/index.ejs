@@ -57,19 +57,15 @@
               action="<%= editAlert ? '/alerts/' + editAlert.id + '/update' : '/alerts' %>"
               class="needs-validation"
             >
-              <!-- Target User -->
+              <!-- Authenticated User (Scoped) -->
+              <input type="hidden" name="user_id" value="<%= currentUser ? currentUser.id : selectedUserId %>">
               <div class="mb-3">
-                <label for="user_id" class="form-label fw-semibold small">User Account</label>
-                <select name="user_id" id="user_id" class="form-select form-select-sm" required>
-                  <% for (let u of users) { %>
-                    <option
-                      value="<%= u.id %>"
-                      <%= (editAlert && editAlert.user_id === u.id) || (!editAlert && String(selectedUserId) === String(u.id)) ? 'selected' : '' %>
-                    >
-                      <%= u.username %> (<%= u.email %>)
-                    </option>
-                  <% } %>
-                </select>
+                <label class="form-label fw-semibold small text-secondary">Active Trader</label>
+                <div class="p-2 border rounded bg-body-tertiary d-flex align-items-center gap-2">
+                  <span class="fs-6">👤</span>
+                  <strong><%= currentUser ? currentUser.username : 'Default Trader' %></strong>
+                  <span class="badge bg-success-subtle text-success border border-success-subtle ms-auto">Authenticated</span>
+                </div>
               </div>
 
               <!-- Crypto Asset Dropdown -->
@@ -102,39 +98,39 @@
                 </select>
               </div>
 
-              <!-- Trigger Condition Radio Buttons -->
+              <!-- Trigger Condition Selection -->
               <div class="mb-3">
-                <label class="form-label fw-semibold small d-block">Condition Trigger</label>
-                <div class="btn-group w-100" role="group">
-                  <input
-                    type="radio"
-                    class="btn-check"
-                    name="condition_type"
-                    id="condAbove"
-                    value="ABOVE"
-                    autocomplete="off"
-                    <%= (!editAlert || editAlert.condition_type === 'ABOVE') ? 'checked' : '' %>
-                  >
-                  <label class="btn btn-outline-success btn-sm" for="condAbove">📈 Price ABOVE (>=)</label>
-
-                  <input
-                    type="radio"
-                    class="btn-check"
-                    name="condition_type"
-                    id="condBelow"
-                    value="BELOW"
-                    autocomplete="off"
-                    <%= (editAlert && editAlert.condition_type === 'BELOW') ? 'checked' : '' %>
-                  >
-                  <label class="btn btn-outline-danger btn-sm" for="condBelow">📉 Price BELOW (<=)</label>
-                </div>
+                <label for="condition_type" class="form-label fw-semibold small d-block">Condition Trigger</label>
+                <select name="condition_type" id="condition_type" class="form-select form-select-sm" required>
+                  <optgroup label="Static Price Target">
+                    <option value="ABOVE" <%= (!editAlert || editAlert.condition_type === 'ABOVE') ? 'selected' : '' %>>
+                      📈 Price ABOVE (>= $)
+                    </option>
+                    <option value="BELOW" <%= (editAlert && editAlert.condition_type === 'BELOW') ? 'selected' : '' %>>
+                      📉 Price BELOW (<= $)
+                    </option>
+                  </optgroup>
+                  <optgroup label="24h Percentage Return">
+                    <option value="PCT_CHANGE_24H_ABOVE" <%= (editAlert && editAlert.condition_type === 'PCT_CHANGE_24H_ABOVE') ? 'selected' : '' %>>
+                      🚀 24h Surge >= (+X%)
+                    </option>
+                    <option value="PCT_CHANGE_24H_BELOW" <%= (editAlert && editAlert.condition_type === 'PCT_CHANGE_24H_BELOW') ? 'selected' : '' %>>
+                      🩸 24h Drop <= (-X%)
+                    </option>
+                  </optgroup>
+                  <optgroup label="Risk Management & Trailing Stops">
+                    <option value="TRAILING_STOP" <%= (editAlert && editAlert.condition_type === 'TRAILING_STOP') ? 'selected' : '' %>>
+                      🛡️ Trailing Stop (X% drop from peak)
+                    </option>
+                  </optgroup>
+                </select>
               </div>
 
-              <!-- Target Price Input -->
-              <div class="mb-4">
-                <label for="target_price" class="form-label fw-semibold small">Target Price ($ USD)</label>
+              <!-- Target Price / Percentage Input -->
+              <div class="mb-3">
+                <label for="target_price" id="targetPriceLabel" class="form-label fw-semibold small">Target Price ($ USD)</label>
                 <div class="input-group input-group-sm">
-                  <span class="input-group-text">$</span>
+                  <span class="input-group-text" id="targetPricePrefix">$</span>
                   <input
                     type="number"
                     step="0.01"
@@ -146,7 +142,42 @@
                     value="<%= editAlert ? Number(editAlert.target_price) : '' %>"
                     required
                   >
+                  <span class="input-group-text d-none" id="targetPriceSuffix">%</span>
                 </div>
+                <small class="text-secondary d-block mt-1" id="targetHelpText" style="font-size: 0.72rem;">
+                  Alert will trigger when market close meets or exceeds this target.
+                </small>
+              </div>
+
+              <!-- Notification Channel & Target -->
+              <div class="mb-4 p-2 rounded bg-body-tertiary border">
+                <label class="form-label fw-semibold small mb-1 d-flex align-items-center justify-content-between">
+                  <span>🔔 Alert Dispatch Channel</span>
+                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px;">Instant Webhook</span>
+                </label>
+                <div class="row g-2">
+                  <div class="col-sm-5">
+                    <select name="notification_channel" id="notification_channel" class="form-select form-select-sm">
+                      <option value="IN_APP" <%= (!editAlert || editAlert.notification_channel === 'IN_APP') ? 'selected' : '' %>>📱 In-App (Dashboard)</option>
+                      <option value="TELEGRAM" <%= (editAlert && editAlert.notification_channel === 'TELEGRAM') ? 'selected' : '' %>>✈️ Telegram</option>
+                      <option value="DISCORD" <%= (editAlert && editAlert.notification_channel === 'DISCORD') ? 'selected' : '' %>>💬 Discord Webhook</option>
+                      <option value="EMAIL" <%= (editAlert && editAlert.notification_channel === 'EMAIL') ? 'selected' : '' %>>✉️ Email</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-7">
+                    <input
+                      type="text"
+                      name="recipient_target"
+                      id="recipient_target"
+                      class="form-control form-control-sm"
+                      placeholder="e.g. @chat_id, webhook URL or email"
+                      value="<%= editAlert ? (editAlert.recipient_target || '') : '' %>"
+                    >
+                  </div>
+                </div>
+                <small class="text-secondary d-block mt-1" style="font-size: 11px;">
+                  Dispatches immediately when price condition is triggered.
+                </small>
               </div>
 
               <!-- Form Action Buttons -->
@@ -163,9 +194,10 @@
         </div>
       </section>
 
-      <!-- RIGHT COLUMN: Watchlist Table & Filter Bar (col-md-8) -->
+      <!-- RIGHT COLUMN: Watchlist Table, Chart & Filter Bar (col-md-8) -->
       <section class="col-lg-8 col-md-7 col-sm-12">
-        <div class="card shadow-sm">
+
+        <div class="card shadow-sm mb-4">
 
           <!-- Filter Toolbar Header -->
           <div class="card-header bg-body-tertiary py-3 border-bottom">
@@ -211,6 +243,7 @@
                   <th scope="col">Exchange</th>
                   <th scope="col">Condition</th>
                   <th scope="col">Target ($)</th>
+                  <th scope="col">Channel</th>
                   <th scope="col">Status</th>
                   <th scope="col" class="text-end pe-3">Actions</th>
                 </tr>
@@ -218,7 +251,7 @@
               <tbody>
                 <% if (alerts.length === 0) { %>
                   <tr>
-                    <td colspan="8" class="text-center py-4 text-muted">
+                    <td colspan="9" class="text-center py-4 text-muted">
                       No price alerts found matching the selected filters. Use the left panel to create one!
                     </td>
                   </tr>
@@ -240,24 +273,72 @@
                           <span class="badge bg-success-subtle text-success border border-success-subtle">
                             >= ABOVE
                           </span>
-                        <% } else { %>
+                        <% } else if (alert.condition_type === 'BELOW') { %>
                           <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
                             <= BELOW
+                          </span>
+                        <% } else if (alert.condition_type === 'PCT_CHANGE_24H_ABOVE') { %>
+                          <span class="badge bg-success-subtle text-success border border-success-subtle">
+                            🚀 24h Surge
+                          </span>
+                        <% } else if (alert.condition_type === 'PCT_CHANGE_24H_BELOW') { %>
+                          <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                            🩸 24h Drop
+                          </span>
+                        <% } else if (alert.condition_type === 'TRAILING_STOP') { %>
+                          <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+                            🛡️ Trailing Stop
+                          </span>
+                        <% } else { %>
+                          <span class="badge bg-secondary-subtle text-secondary border">
+                            <%= alert.condition_type %>
                           </span>
                         <% } %>
                       </td>
                       <td class="fw-bold text-body">
-                        $<%= Number(alert.target_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                        <% if (alert.condition_type.startsWith('PCT_CHANGE_24H') || alert.condition_type === 'TRAILING_STOP') { %>
+                          <%= alert.condition_type === 'PCT_CHANGE_24H_BELOW' ? '-' : '+' %><%= Number(alert.target_price).toFixed(2) %>%
+                          <% if (alert.condition_type === 'TRAILING_STOP' && alert.peak_price) { %>
+                            <small class="text-secondary d-block" style="font-size: 0.68rem;">Peak: $<%= Number(alert.peak_price).toLocaleString() %></small>
+                          <% } %>
+                        <% } else { %>
+                          $<%= Number(alert.target_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                        <% } %>
+                      </td>
+                      <td>
+                        <% if (alert.notification_channel === 'TELEGRAM') { %>
+                          <span class="badge bg-info-subtle text-info border border-info-subtle" title="<%= alert.recipient_target || '' %>">✈️ TG</span>
+                        <% } else if (alert.notification_channel === 'DISCORD') { %>
+                          <span class="badge bg-primary-subtle text-primary border border-primary-subtle" title="<%= alert.recipient_target || '' %>">💬 Discord</span>
+                        <% } else if (alert.notification_channel === 'EMAIL') { %>
+                          <span class="badge bg-warning-subtle text-light border border-warning-subtle" title="<%= alert.recipient_target || '' %>">✉️ Email</span>
+                        <% } else { %>
+                          <span class="badge bg-secondary-subtle text-secondary border">📱 App</span>
+                        <% } %>
                       </td>
                       <td>
                         <% if (alert.is_triggered) { %>
                           <span class="badge badge-triggered px-2 py-1">🔴 TRIGGERED</span>
+                          <% if (alert.triggered_at) { %>
+                            <div class="text-muted" style="font-size: 10px;"><%= new Date(alert.triggered_at).toLocaleTimeString() %></div>
+                          <% } %>
                         <% } else { %>
                           <span class="badge badge-active px-2 py-1">🟢 ACTIVE</span>
                         <% } %>
                       </td>
                       <td class="text-end pe-3">
                         <div class="d-inline-flex gap-1">
+                          <!-- History Audit Button (Phase 8+ 3.2) -->
+                          <button
+                            type="button"
+                            class="btn btn-outline-info btn-sm py-0 px-2 btn-alert-history"
+                            data-alert-id="<%= alert.id %>"
+                            data-asset="<%= alert.asset_symbol %>"
+                            title="View Alert Audit History"
+                          >
+                            📜
+                          </button>
+
                           <!-- Edit Button -->
                           <a
                             href="/?edit_id=<%= alert.id %>&user_id=<%= selectedUserId %>&status=<%= selectedStatus %>"
@@ -291,6 +372,57 @@
             </table>
           </div>
         </div>
+
+        <!-- Candlestick D1 Market Chart (ApexCharts.js) -->
+        <%- include('partials/price_chart') %>
+
+        <!-- Recent Audit Trail & Timeline (Phase 8+ 3.2 - Solves C1 / C9 visibility) -->
+        <div class="card shadow-sm mt-4">
+          <div class="card-header bg-body-tertiary py-3 d-flex justify-content-between align-items-center">
+            <h6 class="card-title fw-bold m-0 text-body d-flex align-items-center gap-2">
+              <span>📜</span>
+              <span>Recent Alert Activity &amp; Audit Trail</span>
+            </h6>
+            <span class="badge bg-secondary-subtle text-secondary border small">Real-Time Events</span>
+          </div>
+          <div class="card-body p-0">
+            <% if (!recentEvents || recentEvents.length === 0) { %>
+              <div class="p-3 text-center text-muted small">
+                No alert lifecycle events recorded yet. Events appear when alerts are created, updated, or triggered.
+              </div>
+            <% } else { %>
+              <div class="list-group list-group-flush" style="max-height: 280px; overflow-y: auto;">
+                <% for (const evt of recentEvents) { %>
+                  <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-2 px-3">
+                    <div class="d-flex align-items-center gap-2">
+                      <% if (evt.event_type === 'TRIGGERED') { %>
+                        <span class="badge bg-danger text-light px-2 py-1">🎯 TRIGGERED</span>
+                      <% } else if (evt.event_type === 'CREATED') { %>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">➕ CREATED</span>
+                      <% } else if (evt.event_type === 'RE-ARMED') { %>
+                        <span class="badge bg-warning-subtle text-light border border-warning-subtle px-2 py-1">🔄 RE-ARMED</span>
+                      <% } else if (evt.event_type === 'NOTIFIED') { %>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">📨 NOTIFIED</span>
+                      <% } else if (evt.event_type === 'FAILED') { %>
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">⚠️ FAILED</span>
+                      <% } %>
+                      <div>
+                        <strong class="text-body small"><%= evt.asset_symbol %></strong>
+                        <span class="text-secondary small ms-1">(#<%= evt.alert_id %>)</span>
+                        <div class="text-secondary" style="font-size: 0.75rem;"><%= evt.message || '' %></div>
+                      </div>
+                    </div>
+                    <div class="text-end text-secondary small" style="font-size: 0.72rem;">
+                      <div><%= new Date(evt.created_at).toLocaleDateString() %></div>
+                      <div><%= new Date(evt.created_at).toLocaleTimeString() %></div>
+                    </div>
+                  </div>
+                <% } %>
+              </div>
+            <% } %>
+          </div>
+        </div>
+
       </section>
 
     </div>
@@ -302,6 +434,1354 @@
     integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
     crossorigin="anonymous"
   ></script>
+
+  <!-- ApexCharts 8.8.1 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts@8.8.1/dist/apexcharts.min.js"></script>
+  <!-- Client-Side Chart Script -->
+  <script src="/js/chart.js"></script>
+
+  <!-- SweetAlert2 11 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <!-- Global HTML Sanitization Helper for Dynamic Modals & Alerts -->
+  <script>
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+
+  <!-- Alert Event Audit Trail SweetAlert2 Controller (Phase 8+ 3.2) -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.btn-alert-history').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const alertId = btn.getAttribute('data-alert-id');
+          const assetSymbol = btn.getAttribute('data-asset') || 'Asset';
+          const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+          Swal.fire({
+            title: `Loading Audit Trail for #${alertId}...`,
+            html: '<div class="spinner-border text-info my-3" role="status"></div>',
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#1e293b',
+          });
+
+          try {
+            const resp = await fetch(`/api/alerts/${alertId}/events`);
+            if (!resp.ok) {
+              const errData = await resp.json().catch(() => ({}));
+              throw new Error(errData.error || 'Failed to load alert event history');
+            }
+            const data = await resp.json();
+            const events = data.events || [];
+
+            let timelineItems = events.map(evt => {
+              const safeType = escapeHtml(evt.event_type);
+              const safeMsg = escapeHtml(evt.message || 'No description');
+              const timeStr = new Date(evt.created_at).toLocaleString();
+              let badgeClass = 'bg-secondary';
+              if (evt.event_type === 'TRIGGERED') badgeClass = 'bg-danger text-light';
+              else if (evt.event_type === 'CREATED') badgeClass = 'bg-primary text-light';
+              else if (evt.event_type === 'RE-ARMED') badgeClass = 'bg-warning text-dark';
+              else if (evt.event_type === 'NOTIFIED') badgeClass = 'bg-success text-light';
+              else if (evt.event_type === 'FAILED') badgeClass = 'bg-danger-subtle text-danger border border-danger-subtle';
+
+              return `
+                <div class="d-flex align-items-start gap-2 py-2 border-bottom border-secondary-subtle">
+                  <span class="badge ${badgeClass} mt-1" style="font-size: 0.65rem;">${safeType}</span>
+                  <div class="flex-grow-1">
+                    <div class="small fw-semibold text-body">${safeMsg}</div>
+                    <div class="text-secondary" style="font-size: 0.72rem;">${timeStr}</div>
+                  </div>
+                  ${evt.price_at_event ? `<span class="badge bg-body-tertiary text-body border" style="font-size: 0.7rem;">$${Number(evt.price_at_event).toLocaleString()}</span>` : ''}
+                </div>
+              `;
+            }).join('');
+
+            if (!timelineItems) {
+              timelineItems = '<div class="p-3 text-center text-muted small">No audit history found for this alert.</div>';
+            }
+
+            const modalHtml = `
+              <div class="text-start">
+                <div class="p-2 mb-2 rounded bg-body-tertiary border d-flex justify-content-between align-items-center">
+                  <span class="small fw-bold">Target Pair: <strong>${escapeHtml(assetSymbol)}</strong></span>
+                  <span class="badge bg-secondary-subtle text-secondary border">Alert #${alertId}</span>
+                </div>
+                <div style="max-height: 320px; overflow-y: auto;">
+                  ${timelineItems}
+                </div>
+              </div>
+            `;
+
+            Swal.fire({
+              title: `📜 Alert Audit Trail`,
+              html: modalHtml,
+              width: '520px',
+              confirmButtonText: 'Close',
+              confirmButtonColor: '#0d6efd',
+              background: isDark ? '#1e293b' : '#ffffff',
+              color: isDark ? '#f8fafc' : '#1e293b',
+            });
+          } catch (err) {
+            Swal.fire({
+              icon: 'error',
+              title: 'Error',
+              text: err.message,
+              background: isDark ? '#1e293b' : '#ffffff',
+              color: isDark ? '#f8fafc' : '#1e293b',
+            });
+          }
+        });
+      });
+    });
+  </script>
+
+  <!-- Condition Type Dynamic Input Field Controller -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const condSelect = document.getElementById('condition_type');
+      const labelEl = document.getElementById('targetPriceLabel');
+      const prefixEl = document.getElementById('targetPricePrefix');
+      const suffixEl = document.getElementById('targetPriceSuffix');
+      const helpEl = document.getElementById('targetHelpText');
+      const inputEl = document.getElementById('target_price');
+
+      if (!condSelect || !labelEl) return;
+
+      const updateConditionUI = () => {
+        const val = condSelect.value;
+        if (val === 'ABOVE') {
+          labelEl.textContent = 'Target Price ($ USD)';
+          prefixEl.classList.remove('d-none');
+          prefixEl.textContent = '$';
+          suffixEl.classList.add('d-none');
+          inputEl.placeholder = 'e.g. 95000.00';
+          helpEl.textContent = 'Alert will trigger when market close meets or exceeds this target price.';
+        } else if (val === 'BELOW') {
+          labelEl.textContent = 'Target Price ($ USD)';
+          prefixEl.classList.remove('d-none');
+          prefixEl.textContent = '$';
+          suffixEl.classList.add('d-none');
+          inputEl.placeholder = 'e.g. 80000.00';
+          helpEl.textContent = 'Alert will trigger when market close drops to or below this target price.';
+        } else if (val === 'PCT_CHANGE_24H_ABOVE') {
+          labelEl.textContent = '24h Gain Target (%)';
+          prefixEl.classList.remove('d-none');
+          prefixEl.textContent = '+';
+          suffixEl.classList.remove('d-none');
+          inputEl.placeholder = 'e.g. 5.0';
+          helpEl.textContent = 'Alert triggers when 24-hour return surges by at least this percentage.';
+        } else if (val === 'PCT_CHANGE_24H_BELOW') {
+          labelEl.textContent = '24h Loss Target (%)';
+          prefixEl.classList.remove('d-none');
+          prefixEl.textContent = '-';
+          suffixEl.classList.remove('d-none');
+          inputEl.placeholder = 'e.g. 10.0';
+          helpEl.textContent = 'Alert triggers when 24-hour return drops by at least this percentage.';
+        } else if (val === 'TRAILING_STOP') {
+          labelEl.textContent = 'Trailing Drawdown Distance (%)';
+          prefixEl.classList.add('d-none');
+          suffixEl.classList.remove('d-none');
+          inputEl.placeholder = 'e.g. 5.0';
+          helpEl.textContent = 'Alert tracks highest peak price and triggers when price drops X% from that peak.';
+        }
+      };
+
+      condSelect.addEventListener('change', updateConditionUI);
+      updateConditionUI();
+    });
+  </script>
+
+  <!-- User Profile Popup Controller -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btnProfile = document.getElementById('btnUserProfile');
+      if (!btnProfile) return;
+
+      btnProfile.addEventListener('click', async () => {
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+        try {
+          const res = await fetch('/profile');
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || 'Failed to fetch profile');
+
+          const user = data.user;
+          const memberSince = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A';
+          const safeUsername = escapeHtml(user.username);
+          const safeEmail = escapeHtml(user.email);
+          const safeMemberSince = escapeHtml(memberSince);
+
+          const modalHtml = `
+            <div class="text-start">
+              <div class="d-flex align-items-center gap-3 p-3 mb-3 rounded bg-body-tertiary border border-secondary-subtle">
+                <span class="fs-1">👤</span>
+                <div>
+                  <h6 class="fw-bold m-0 text-body">${safeUsername}</h6>
+                  <small class="text-secondary d-block">${safeEmail}</small>
+                  <small class="text-secondary" style="font-size: 0.72rem;">Member since: ${safeMemberSince}</small>
+                </div>
+              </div>
+
+              <h6 class="fw-bold mb-2 small text-secondary text-uppercase" style="letter-spacing: 0.5px;">Edit Profile Information</h6>
+              <form id="formEditProfile" class="row g-2">
+                <div class="col-12">
+                  <label class="form-label small fw-semibold mb-1">Username</label>
+                  <input type="text" id="profUsername" class="form-control form-control-sm" value="${safeUsername}" required>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small fw-semibold mb-1">Email Address</label>
+                  <input type="email" id="profEmail" class="form-control form-control-sm" value="${safeEmail}" required>
+                </div>
+
+                <div class="col-12 pt-2 border-top border-secondary-subtle mt-2">
+                  <small class="fw-bold text-secondary d-block mb-1">Change Password (optional)</small>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small text-secondary mb-1">Current Password</label>
+                  <input type="password" id="profCurrentPass" class="form-control form-control-sm" placeholder="Required only if changing password">
+                </div>
+                <div class="col-12">
+                  <label class="form-label small text-secondary mb-1">New Password</label>
+                  <input type="password" id="profNewPass" class="form-control form-control-sm" placeholder="Minimum 6 characters">
+                </div>
+              </form>
+            </div>
+          `;
+
+          Swal.fire({
+            title: '👤 Trader Profile',
+            html: modalHtml,
+            icon: 'info',
+            width: '500px',
+            showCancelButton: true,
+            confirmButtonText: 'Save Changes',
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#1e293b',
+            preConfirm: async () => {
+              const username = document.getElementById('profUsername').value.trim();
+              const email = document.getElementById('profEmail').value.trim();
+              const current_password = document.getElementById('profCurrentPass').value;
+              const new_password = document.getElementById('profNewPass').value;
+
+              if (!username || !email) {
+                Swal.showValidationMessage('Username and Email cannot be empty');
+                return false;
+              }
+
+              if (new_password && new_password.length < 6) {
+                Swal.showValidationMessage('New password must be at least 6 characters');
+                return false;
+              }
+
+              if (new_password && !current_password) {
+                Swal.showValidationMessage('Current password is required to change password');
+                return false;
+              }
+
+              try {
+                const updateRes = await fetch('/profile', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    username,
+                    email,
+                    current_password,
+                    new_password,
+                  }),
+                });
+                const result = await updateRes.json();
+                if (!updateRes.ok) {
+                  throw new Error(result.error || 'Failed to update profile');
+                }
+                return result;
+              } catch (err) {
+                Swal.showValidationMessage(err.message);
+                return false;
+              }
+            },
+          }).then((result) => {
+            if (result.isConfirmed) {
+              Swal.fire({
+                icon: 'success',
+                title: 'Profile Updated!',
+                text: 'Your profile has been saved.',
+                timer: 1500,
+                showConfirmButton: false,
+              }).then(() => {
+                window.location.reload();
+              });
+            }
+          });
+        } catch (err) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: err.message,
+          });
+        }
+      });
+    });
+  </script>
+
+  <!-- System Health Monitor Popup Controller -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('btnShowHealthModal');
+      if (!btn) return;
+
+      btn.addEventListener('click', async () => {
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+        // Initial loading state in SweetAlert
+        Swal.fire({
+          title: 'Checking System Health...',
+          html: '<div class="spinner-border text-info my-3" role="status"></div><p class="text-muted small">Querying database latency and exchange status...</p>',
+          showConfirmButton: false,
+          allowOutsideClick: false,
+          background: isDark ? '#1e293b' : '#ffffff',
+          color: isDark ? '#f8fafc' : '#1e293b',
+        });
+
+        try {
+          const res = await fetch('/health');
+          const data = await res.json();
+
+          const dbBadge = data.database.status === 'connected'
+            ? `<span class="badge bg-success-subtle text-success border border-success-subtle">Connected (${data.database.latencyMs}ms)</span>`
+            : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Disconnected</span>`;
+
+          const cronStatusBadge = data.scheduler?.isRunning
+            ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">Active (${data.scheduler.scheduleType})</span>`
+            : `<span class="badge bg-secondary-subtle text-secondary border">Inactive</span>`;
+
+          const exchangesList = (data.exchanges || [])
+            .map(e => {
+              const safeName = escapeHtml(e.name);
+              const safeCcxt = escapeHtml(e.ccxtId);
+              const safeType = escapeHtml(e.type);
+              return `<li class="d-flex justify-content-between py-1 border-bottom border-secondary-subtle small">
+                <span><strong>${safeName}</strong> <span class="text-secondary">(${safeCcxt})</span></span>
+                <span class="badge bg-info-subtle text-info border border-info-subtle">${safeType}</span>
+              </li>`;
+            })
+            .join('') || '<li class="text-muted small">No exchanges registered</li>';
+
+          const modalHtml = `
+            <div class="text-start">
+              <div class="row g-2 mb-3">
+                <div class="col-6">
+                  <div class="p-2 rounded bg-body-tertiary border text-center">
+                    <div class="text-muted small">Database</div>
+                    <div class="mt-1">${dbBadge}</div>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="p-2 rounded bg-body-tertiary border text-center">
+                    <div class="text-muted small">Cron Polling</div>
+                    <div class="mt-1">${cronStatusBadge}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-2 rounded bg-body-tertiary border mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="fw-semibold small">📊 Watchlist Alert Counts</span>
+                  <span class="badge bg-secondary-subtle text-secondary border" style="font-size: 0.65rem;">
+                    ${data.alerts.scope === 'user' ? 'My Alerts' : 'Global'}
+                  </span>
+                </div>
+                <div class="d-flex justify-content-around text-center small py-1">
+                  <div><span class="text-secondary">Total:</span> <strong>${data.alerts.total}</strong></div>
+                  <div><span class="text-success">Active:</span> <strong>${data.alerts.active}</strong></div>
+                  <div><span class="text-danger">Triggered:</span> <strong>${data.alerts.triggered}</strong></div>
+                </div>
+              </div>
+
+              <div class="p-2 rounded bg-body-tertiary border mb-3">
+                <div class="fw-semibold small mb-1">⏱️ Timestamps & Sync</div>
+                <ul class="list-unstyled mb-0 small text-secondary">
+                  <li><strong>Uptime:</strong> ${data.uptimeSeconds} seconds</li>
+                  <li><strong>Last Data Sync:</strong> ${data.lastMarketDataSync ? new Date(data.lastMarketDataSync).toLocaleString() : 'N/A'}</li>
+                  <li><strong>Next Cron Poll:</strong> ${data.scheduler?.nextSyncTime ? new Date(data.scheduler.nextSyncTime).toLocaleTimeString() : 'N/A'}</li>
+                </ul>
+              </div>
+
+              <div class="p-2 rounded bg-body-tertiary border">
+                <div class="fw-semibold small mb-1">🌐 Registered Exchanges</div>
+                <ul class="list-unstyled mb-0">${exchangesList}</ul>
+              </div>
+            </div>
+          `;
+
+          Swal.fire({
+            title: '🩺 System Health & Status',
+            html: modalHtml,
+            icon: data.status === 'ok' ? 'success' : 'warning',
+            confirmButtonText: 'Close',
+            confirmButtonColor: '#0d6efd',
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#1e293b',
+            width: '540px',
+          });
+        } catch (err) {
+          Swal.fire({
+            title: 'Health Check Failed',
+            text: err.message,
+            icon: 'error',
+            confirmButtonText: 'Close',
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#1e293b',
+          });
+        }
+      });
+    });
+  </script>
+
+  <!-- Watchlist Management Modal Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const openWatchlistHandler = async () => {
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        try {
+          const [assetsResp, catalogResp] = await Promise.all([
+            fetch('/assets?format=json'),
+            fetch('/api/markets/catalog'),
+          ]);
+          const data = await assetsResp.json();
+          const catalogData = await catalogResp.json();
+          const assetsList = data.assets || [];
+          const fullCatalog = catalogData.catalog || [];
+
+          let tableRows = assetsList.map(a => {
+            const safeSym = escapeHtml(a.symbol);
+            const safeNm = escapeHtml(a.name);
+            const safeAlerts = Number(a.alert_count) || 0;
+            const safeId = encodeURIComponent(a.id);
+            const isPinned = Boolean(a.is_pinned);
+            const holdingQty = a.holding_qty !== null && a.holding_qty !== undefined ? a.holding_qty : '';
+            const avgCost = a.avg_cost !== null && a.avg_cost !== undefined ? a.avg_cost : '';
+            const formattedClose = Number(a.last_d1_close).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: Number(a.last_d1_close) < 1 ? 4 : 2,
+            });
+
+            return `
+            <tr data-asset-id="${safeId}">
+              <td class="text-center">
+                <button type="button" class="btn btn-sm btn-link p-0 btn-toggle-pin text-decoration-none ${isPinned ? 'text-warning' : 'text-secondary'}" data-id="${safeId}" data-pinned="${isPinned}" title="${isPinned ? 'Unpin' : 'Pin Favourite'}">
+                  ${isPinned ? '★' : '☆'}
+                </button>
+              </td>
+              <td>
+                <span class="fw-bold">${safeSym}</span>
+                <small class="text-secondary d-block" style="font-size: 0.72rem;">${safeNm}</small>
+              </td>
+              <td>$${formattedClose}</td>
+              <td style="min-width: 140px;">
+                <div class="input-group input-group-sm">
+                  <input type="number" step="any" min="0" class="form-control form-control-sm input-holding-qty" placeholder="Qty" value="${holdingQty}" data-id="${safeId}" title="Holding Quantity" style="font-size: 0.75rem;">
+                  <input type="number" step="any" min="0" class="form-control form-control-sm input-avg-cost" placeholder="Avg $" value="${avgCost}" data-id="${safeId}" title="Average Cost ($)" style="font-size: 0.75rem;">
+                  <button type="button" class="btn btn-outline-success btn-save-portfolio py-0 px-1" data-id="${safeId}" title="Save Holdings">✓</button>
+                </div>
+              </td>
+              <td><span class="badge bg-secondary-subtle text-secondary">${safeAlerts} alerts</span></td>
+              <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 btn-move-up" data-id="${safeId}" title="Move Up">↑</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 btn-move-down" data-id="${safeId}" title="Move Down">↓</button>
+                  <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2 btn-delete-asset" data-id="${safeId}" data-symbol="${safeSym}" data-alerts="${safeAlerts}" title="Delete Pair">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+          }).join('');
+
+          const modalHtml = `
+            <div class="text-start">
+              <!-- Active Watchlist Pairs (Top Section) -->
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold m-0"><i class="bi bi-star-fill text-warning"></i> Curate Watchlist & Portfolio (${assetsList.length})</h6>
+                <span class="badge bg-secondary-subtle text-secondary border">Custom Order & Pin</span>
+              </div>
+              <div class="table-responsive border rounded mb-3" style="max-height: 250px; overflow-y: auto;">
+                <table class="table table-sm table-hover align-middle mb-0" id="watchlistSortTable">
+                  <thead class="table-light small">
+                    <tr>
+                      <th class="text-center" style="width: 35px;">Pin</th>
+                      <th>Asset</th>
+                      <th>D1 Close</th>
+                      <th>Holdings (Qty / Avg $)</th>
+                      <th>Alerts</th>
+                      <th class="text-end" style="width: 120px;">Order / Delete</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${tableRows || '<tr><td colspan="6" class="text-center text-muted py-3">No assets currently on watchlist.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Pair Screener & Lookup Information (Bottom Section) -->
+              <div class="card p-3 ${isDark ? 'bg-dark' : 'bg-light'} border border-secondary-subtle shadow-sm">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="fw-bold m-0"><i class="bi bi-search"></i> Pair Screener & Lookup</h6>
+                  <span class="badge bg-primary-subtle text-primary border">${fullCatalog.length} Pairs Available</span>
+                </div>
+                
+                <div class="input-group input-group-sm mb-2">
+                  <span class="input-group-text bg-body-secondary border-secondary-subtle">🔍</span>
+                  <input type="text" id="screenerSearchInput" class="form-control" placeholder="Search pair or coin (e.g. XRP, Doge, Solana, AI)..." autocomplete="off">
+                </div>
+
+                <!-- Screener Live Table Container -->
+                <div id="screenerResultsContainer" class="border rounded bg-body-tertiary mb-3 p-1" style="max-height: 150px; overflow-y: auto;">
+                  <div class="text-center text-secondary small py-3" id="screenerPrompt">
+                    Type to search or browse top verified cryptocurrency pairs below.
+                  </div>
+                </div>
+
+                <!-- Selected / Manual Input Form -->
+                <h6 class="fw-bold mb-2 small text-secondary text-uppercase" style="letter-spacing: 0.5px;">Add to Watchlist</h6>
+                <form id="formAddAsset" class="row g-2">
+                  <div class="col-md-5">
+                    <label class="form-label small text-secondary m-0">Symbol (e.g. XRP/USDT)</label>
+                    <input type="text" name="symbol" id="newAssetSymbol" class="form-control form-control-sm text-uppercase" placeholder="XRP/USDT" required pattern="^[A-Za-z0-9]{2,10}/[A-Za-z0-9]{2,10}$">
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label small text-secondary m-0">Asset Name (e.g. Ripple)</label>
+                    <input type="text" name="name" id="newAssetName" class="form-control form-control-sm" placeholder="Ripple" required>
+                  </div>
+                  <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold">Add</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          `;
+
+          Swal.fire({
+            title: '🪙 Watchlist & Screener Management',
+            html: modalHtml,
+            icon: 'info',
+            width: '820px',
+            showConfirmButton: true,
+            confirmButtonText: 'Done',
+            confirmButtonColor: '#0d6efd',
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#1e293b',
+            didClose: () => {
+              // Refresh page on close if user modified order/holdings
+              if (window.hasModifiedWatchlist) {
+                window.location.reload();
+              }
+            },
+            didOpen: () => {
+              const searchInput = document.getElementById('screenerSearchInput');
+              const resultsContainer = document.getElementById('screenerResultsContainer');
+              const symbolInput = document.getElementById('newAssetSymbol');
+              const nameInput = document.getElementById('newAssetName');
+
+              // Function to render filtered catalog items in Screener style
+              const renderScreenerList = (items) => {
+                if (!items || items.length === 0) {
+                  resultsContainer.innerHTML = '<div class="text-center text-muted small py-2">No matching cryptocurrency pairs found.</div>';
+                  return;
+                }
+
+                const listHtml = items.map(c => {
+                  const alreadyAdded = c.is_on_watchlist;
+                  const safeSym = escapeHtml(c.symbol);
+                  const safeNm = escapeHtml(c.name);
+                  const safeCat = escapeHtml(c.category);
+                  const safeIcon = escapeHtml(c.icon || '◈');
+
+                  return `
+                    <div class="d-flex justify-content-between align-items-center py-1 px-2 border-bottom border-secondary-subtle screener-item ${alreadyAdded ? 'opacity-75' : ''}">
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="fs-6">${safeIcon}</span>
+                        <div>
+                          <strong class="text-body">${safeSym}</strong>
+                          <span class="badge bg-secondary-subtle text-secondary ms-1 py-0 px-1" style="font-size: 0.68rem;">${safeCat}</span>
+                          <small class="d-block text-secondary" style="font-size: 0.72rem;">${safeNm}</small>
+                        </div>
+                      </div>
+                      <div class="d-flex align-items-center gap-1">
+                        ${alreadyAdded 
+                          ? '<span class="badge bg-success-subtle text-success border border-success-subtle small py-1 px-2"><i class="bi bi-check2"></i> In Watchlist</span>' 
+                          : `<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 btn-pick-pair" data-symbol="${safeSym}" data-name="${safeNm}" title="Fill into form">Pick</button>
+                             <button type="button" class="btn btn-sm btn-primary py-0 px-2 btn-quick-add" data-symbol="${safeSym}" data-name="${safeNm}" title="Add immediately">+ Add</button>`
+                        }
+                      </div>
+                    </div>
+                  `;
+                }).join('');
+
+                resultsContainer.innerHTML = listHtml;
+
+                // Bind Pick buttons
+                resultsContainer.querySelectorAll('.btn-pick-pair').forEach(btn => {
+                  btn.addEventListener('click', () => {
+                    symbolInput.value = btn.getAttribute('data-symbol');
+                    nameInput.value = btn.getAttribute('data-name');
+                    symbolInput.focus();
+                  });
+                });
+
+                // Bind Quick Add buttons
+                resultsContainer.querySelectorAll('.btn-quick-add').forEach(btn => {
+                  btn.addEventListener('click', async () => {
+                    const sym = btn.getAttribute('data-symbol');
+                    const nm = btn.getAttribute('data-name');
+                    await submitAddAsset(sym, nm);
+                  });
+                });
+              };
+
+              // Initial render with first 10 items
+              renderScreenerList(fullCatalog.slice(0, 10));
+
+              // Search input filter listener
+              if (searchInput) {
+                searchInput.addEventListener('input', (e) => {
+                  const q = e.target.value.trim().toLowerCase();
+                  if (!q) {
+                    renderScreenerList(fullCatalog.slice(0, 10));
+                    return;
+                  }
+                  const filtered = fullCatalog.filter(c => 
+                    c.symbol.toLowerCase().includes(q) || 
+                    c.name.toLowerCase().includes(q) ||
+                    c.base.toLowerCase().includes(q) ||
+                    (c.category && c.category.toLowerCase().includes(q))
+                  );
+                  renderScreenerList(filtered);
+                });
+              }
+
+              // Reusable submission helper
+              const submitAddAsset = async (sym, nm) => {
+                try {
+                  const addResp = await fetch('/assets', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ symbol: sym, name: nm }),
+                  });
+                  const addResult = await addResp.json();
+                  if (!addResp.ok) {
+                    throw new Error(addResult.message || (typeof addResult === 'string' ? addResult : 'Failed to add asset'));
+                  }
+                  Swal.fire({
+                    icon: 'success',
+                    title: 'Pair Added!',
+                    text: addResult.message,
+                    timer: 1500,
+                    showConfirmButton: false,
+                  }).then(() => {
+                    window.location.href = '/?asset_added=' + encodeURIComponent(sym);
+                  });
+                } catch (addErr) {
+                  Swal.showValidationMessage(addErr.message);
+                }
+              };
+
+              // Bind Add Asset form submission
+              const formAdd = document.getElementById('formAddAsset');
+              if (formAdd) {
+                formAdd.addEventListener('submit', async (e) => {
+                  e.preventDefault();
+                  const sym = symbolInput.value;
+                  const nm = nameInput.value;
+                  await submitAddAsset(sym, nm);
+                });
+              }
+
+              // Helper to save entire list order & pin status
+              const persistWatchlistOrder = async () => {
+                window.hasModifiedWatchlist = true;
+                const rows = Array.from(document.querySelectorAll('#watchlistSortTable tbody tr[data-asset-id]'));
+                const items = rows.map((tr, idx) => {
+                  const aid = tr.getAttribute('data-asset-id');
+                  const pinBtn = tr.querySelector('.btn-toggle-pin');
+                  const isPinned = pinBtn && pinBtn.getAttribute('data-pinned') === 'true';
+                  return {
+                    assetId: aid,
+                    sortOrder: idx + 1,
+                    isPinned: Boolean(isPinned),
+                  };
+                });
+
+                try {
+                  const resp = await fetch('/api/watchlist/reorder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ items }),
+                  });
+                  if (!resp.ok) {
+                    const errJson = await resp.json();
+                    throw new Error(errJson.error || 'Failed to reorder watchlist');
+                  }
+                } catch (e) {
+                  console.error('Watchlist reorder error:', e);
+                }
+              };
+
+              // Bind Pin Toggle buttons
+              document.querySelectorAll('.btn-toggle-pin').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                  const currentPinned = btn.getAttribute('data-pinned') === 'true';
+                  const nextPinned = !currentPinned;
+                  btn.setAttribute('data-pinned', String(nextPinned));
+                  btn.innerHTML = nextPinned ? '★' : '☆';
+                  btn.classList.toggle('text-warning', nextPinned);
+                  btn.classList.toggle('text-secondary', !nextPinned);
+                  await persistWatchlistOrder();
+                });
+              });
+
+              // Bind Move Up / Move Down buttons
+              document.querySelectorAll('.btn-move-up').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                  const tr = btn.closest('tr');
+                  if (tr && tr.previousElementSibling) {
+                    tr.parentNode.insertBefore(tr, tr.previousElementSibling);
+                    await persistWatchlistOrder();
+                  }
+                });
+              });
+
+              document.querySelectorAll('.btn-move-down').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                  const tr = btn.closest('tr');
+                  if (tr && tr.nextElementSibling) {
+                    tr.parentNode.insertBefore(tr.nextElementSibling, tr);
+                    await persistWatchlistOrder();
+                  }
+                });
+              });
+
+              // Bind Portfolio Holdings Save buttons
+              document.querySelectorAll('.btn-save-portfolio').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                  const assetId = btn.getAttribute('data-id');
+                  const tr = btn.closest('tr');
+                  const qtyInput = tr.querySelector('.input-holding-qty');
+                  const costInput = tr.querySelector('.input-avg-cost');
+
+                  const holding_qty = qtyInput ? qtyInput.value.trim() : '';
+                  const avg_cost = costInput ? costInput.value.trim() : '';
+
+                  try {
+                    window.hasModifiedWatchlist = true;
+                    const portResp = await fetch(`/api/watchlist/${assetId}/portfolio`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                      body: JSON.stringify({ holding_qty, avg_cost }),
+                    });
+                    const portData = await portResp.json();
+                    if (!portResp.ok) throw new Error(portData.error || 'Failed to save portfolio holdings');
+
+                    btn.classList.remove('btn-outline-success');
+                    btn.classList.add('btn-success');
+                    setTimeout(() => {
+                      btn.classList.remove('btn-success');
+                      btn.classList.add('btn-outline-success');
+                    }, 1200);
+                  } catch (portErr) {
+                    Swal.showValidationMessage(portErr.message);
+                  }
+                });
+              });
+
+              // Bind Delete buttons
+              document.querySelectorAll('.btn-delete-asset').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                  const assetId = btn.getAttribute('data-id');
+                  const assetSym = btn.getAttribute('data-symbol');
+                  const alertCount = btn.getAttribute('data-alerts');
+
+                  const confirmMsg = Number(alertCount) > 0 
+                    ? `Deleting ${assetSym} will also remove ${alertCount} linked alert(s)! Proceed?`
+                    : `Remove ${assetSym} from watchlist?`;
+
+                  const confirmResult = await Swal.fire({
+                    title: `Delete ${assetSym}?`,
+                    text: confirmMsg,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc3545',
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: 'Yes, Delete',
+                    background: isDark ? '#1e293b' : '#ffffff',
+                    color: isDark ? '#f8fafc' : '#1e293b',
+                  });
+
+                  if (confirmResult.isConfirmed) {
+                    try {
+                      const delResp = await fetch(`/assets/${assetId}/delete`, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json' },
+                      });
+                      const delData = await delResp.json();
+                      if (!delResp.ok) throw new Error(delData.message || 'Delete failed');
+
+                      Swal.fire({
+                        icon: 'success',
+                        title: 'Deleted',
+                        text: delData.message,
+                        timer: 1500,
+                        showConfirmButton: false,
+                      }).then(() => {
+                        window.location.href = '/?asset_deleted=' + encodeURIComponent(assetSym);
+                      });
+                    } catch (delErr) {
+                      Swal.fire({
+                        icon: 'error',
+                        title: 'Delete Failed',
+                        text: delErr.message,
+                      });
+                    }
+                  }
+                });
+              });
+            }
+          });
+        } catch (err) {
+          Swal.fire({
+            title: 'Watchlist Error',
+            text: err.message,
+            icon: 'error',
+            confirmButtonText: 'Close',
+          });
+        }
+      };
+
+      const btnOpenWatchlist = document.getElementById('btnOpenWatchlistModal');
+      const btnNavWatchlist = document.getElementById('btnNavWatchlist');
+      if (btnOpenWatchlist) btnOpenWatchlist.addEventListener('click', openWatchlistHandler);
+      if (btnNavWatchlist) btnNavWatchlist.addEventListener('click', openWatchlistHandler);
+    });
+  </script>
+
+  <!-- SweetAlert2 Trigger on Committed DB Operations -->
+  <% if (assetAdded) { %>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        Swal.fire({
+          icon: 'success',
+          title: 'Asset Added to Watchlist!',
+          text: 'Pair <%= assetAdded %> has been verified and added.',
+          timer: 2500,
+          timerProgressBar: true,
+          showConfirmButton: false,
+          background: isDark ? '#1e293b' : '#ffffff',
+          color: isDark ? '#f8fafc' : '#1e293b',
+        });
+      });
+    </script>
+  <% } else if (assetDeleted) { %>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        Swal.fire({
+          icon: 'info',
+          title: 'Asset Removed',
+          text: 'Pair <%= assetDeleted %> has been removed from your watchlist.',
+          timer: 2500,
+          timerProgressBar: true,
+          showConfirmButton: false,
+          background: isDark ? '#1e293b' : '#ffffff',
+          color: isDark ? '#f8fafc' : '#1e293b',
+        });
+      });
+    </script>
+  <% } else if (swalMessage === 'saved') { %>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        Swal.fire({
+          icon: 'success',
+          title: 'Alert Created & Committed!',
+          text: 'Your price alert has been safely saved to the database.',
+          timer: 2500,
+          timerProgressBar: true,
+          showConfirmButton: false,
+          background: isDark ? '#1e293b' : '#ffffff',
+          color: isDark ? '#f8fafc' : '#1e293b',
+        });
+      });
+    </script>
+  <% } else if (swalMessage === 'updated') { %>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        Swal.fire({
+          icon: 'success',
+          title: 'Alert Updated & Committed!',
+          text: 'Your changes have been saved and active triggers reset.',
+          timer: 2500,
+          timerProgressBar: true,
+          showConfirmButton: false,
+          background: isDark ? '#1e293b' : '#ffffff',
+          color: isDark ? '#f8fafc' : '#1e293b',
+        });
+      });
+    </script>
+  <% } %>
+
+  <!-- Admin Exchange Management & Reset DB Script -->
+  <% if (locals.currentUser && locals.currentUser.role === 'ADMIN') { %>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const isDark = () => document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+      // 1. Reset Database Handler with SweetAlert2 confirmation
+      const btnReset = document.getElementById('btnNavResetDb');
+      if (btnReset) {
+        btnReset.addEventListener('click', async () => {
+          const dark = isDark();
+          const confirmResult = await Swal.fire({
+            title: '⚠️ Reset Database?',
+            text: 'This will truncate all tables and re-seed default demo data. This action cannot be undone!',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Reset Database',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+          });
+
+          if (!confirmResult.isConfirmed) return;
+
+          Swal.fire({
+            title: 'Resetting Database...',
+            html: '<div class="spinner-border text-danger my-3" role="status"></div><p class="text-muted small">Re-running seeds and truncating tables...</p>',
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+          });
+
+          try {
+            const resp = await fetch('/reset-db', {
+              method: 'POST',
+              headers: { 'Accept': 'application/json' },
+            });
+
+            if (!resp.ok) {
+              const errData = await resp.json().catch(() => ({}));
+              throw new Error(errData.message || 'Administrator privilege required.');
+            }
+
+            await Swal.fire({
+              icon: 'success',
+              title: 'Database Reset Complete',
+              text: 'All tables re-seeded with fresh market assets and demo alerts.',
+              timer: 1800,
+              showConfirmButton: false,
+              background: dark ? '#1e293b' : '#ffffff',
+              color: dark ? '#f8fafc' : '#1e293b',
+            });
+            window.location.href = '/';
+          } catch (err) {
+            Swal.fire({
+              icon: 'error',
+              title: 'Permission Denied',
+              text: err.message || 'Forbidden: Administrator privilege required.',
+              background: dark ? '#1e293b' : '#ffffff',
+              color: dark ? '#f8fafc' : '#1e293b',
+            });
+          }
+        });
+      }
+
+      // 2. Admin Exchanges Management Modal
+      const btnExchanges = document.getElementById('btnNavExchanges');
+      if (btnExchanges) {
+        btnExchanges.addEventListener('click', async () => {
+          const dark = isDark();
+
+          Swal.fire({
+            title: 'Loading Exchanges...',
+            html: '<div class="spinner-border text-primary my-3" role="status"></div>',
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+          });
+
+          try {
+            const res = await fetch('/api/admin/exchanges');
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => ({}));
+              throw new Error(errJson.message || 'Forbidden: Administrator privilege required.');
+            }
+            const data = await res.json();
+            const exchanges = data.exchanges || [];
+
+            let rowsHtml = exchanges.map(ex => {
+              const safeName = escapeHtml(ex.display_name);
+              const safeCcxt = escapeHtml(ex.ccxt_id);
+              const isChecked = ex.is_active ? 'checked' : '';
+              return `
+                <tr class="align-middle">
+                  <td class="fw-semibold">
+                    ${safeName}
+                    <div class="text-secondary small font-monospace">${safeCcxt}</div>
+                  </td>
+                  <td style="width: 100px;">
+                    <input type="number" class="form-control form-control-sm text-center exchange-priority" data-id="${ex.id}" value="${ex.priority_order}" min="1" max="99" style="max-width: 70px;">
+                  </td>
+                  <td class="text-center" style="width: 90px;">
+                    <div class="form-check form-switch d-inline-block">
+                      <input class="form-check-input exchange-toggle" type="checkbox" data-id="${ex.id}" ${isChecked}>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('');
+
+            const modalHtml = `
+              <div class="text-start">
+                <p class="text-muted small mb-2">Enable or disable exchange feeds and configure priority for ticker resolution.</p>
+                <div class="table-responsive border rounded mb-3" style="max-height: 260px;">
+                  <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Exchange</th>
+                        <th>Priority</th>
+                        <th class="text-center">Active</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${rowsHtml}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="border rounded p-2 bg-body-tertiary">
+                  <div class="fw-semibold small mb-2">➕ Register New Exchange</div>
+                  <div class="row g-2">
+                    <div class="col-5">
+                      <input type="text" id="newCcxtId" class="form-control form-control-sm font-monospace" placeholder="ccxt_id (e.g. kraken)">
+                    </div>
+                    <div class="col-7">
+                      <input type="text" id="newDisplayName" class="form-control form-control-sm" placeholder="Display Name (e.g. Kraken)">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+
+            const result = await Swal.fire({
+              title: '🏦 CCXT Exchange Manager',
+              html: modalHtml,
+              width: '600px',
+              showCancelButton: true,
+              confirmButtonText: 'Save Changes',
+              cancelButtonText: 'Close',
+              confirmButtonColor: '#0d6efd',
+              background: dark ? '#1e293b' : '#ffffff',
+              color: dark ? '#f8fafc' : '#1e293b',
+              preConfirm: async () => {
+                const updates = [];
+                document.querySelectorAll('.exchange-priority').forEach(input => {
+                  const id = input.getAttribute('data-id');
+                  const priority = parseInt(input.value, 10) || 10;
+                  const toggle = document.querySelector('.exchange-toggle[data-id="' + id + '"]');
+                  const isActive = toggle ? toggle.checked : true;
+                  updates.push(
+                    fetch('/api/admin/exchanges/' + id, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ priority_order: priority, is_active: isActive }),
+                    })
+                  );
+                });
+
+                // Check if adding new exchange
+                const newCcxt = (document.getElementById('newCcxtId')?.value || '').trim();
+                const newName = (document.getElementById('newDisplayName')?.value || '').trim();
+                if (newCcxt && newName) {
+                  updates.push(
+                    fetch('/api/admin/exchanges', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ ccxt_id: newCcxt, display_name: newName, is_active: true }),
+                    })
+                  );
+                }
+
+                try {
+                  const resps = await Promise.all(updates);
+                  for (const r of resps) {
+                    if (!r.ok) {
+                      const errData = await r.json().catch(() => ({}));
+                      throw new Error(errData.error || 'Failed to update exchanges');
+                    }
+                  }
+                  return true;
+                } catch (err) {
+                  Swal.showValidationMessage(err.message);
+                  return false;
+                }
+              },
+            });
+
+            if (result.isConfirmed) {
+              Swal.fire({
+                icon: 'success',
+                title: 'Exchanges Saved',
+                text: 'Exchange settings and priorities have been updated.',
+                timer: 1500,
+                showConfirmButton: false,
+                background: dark ? '#1e293b' : '#ffffff',
+                color: dark ? '#f8fafc' : '#1e293b',
+              }).then(() => window.location.reload());
+            }
+          } catch (err) {
+            Swal.fire({
+              icon: 'error',
+              title: 'Error',
+              text: err.message,
+              background: dark ? '#1e293b' : '#ffffff',
+              color: dark ? '#f8fafc' : '#1e293b',
+            });
+          }
+        });
+      }
+    });
+  </script>
+  <% } %>
+
+  <!-- Notification Preferences & Test Delivery Modal (Phase 8+ 3.3) -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btnNotifPref = document.getElementById('btnNavNotifPref');
+      if (!btnNotifPref) return;
+
+      const isDark = () => document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+      btnNotifPref.addEventListener('click', async () => {
+        const dark = isDark();
+
+        Swal.fire({
+          title: 'Loading Preferences...',
+          html: '<div class="spinner-border text-warning my-3" role="status"></div>',
+          showConfirmButton: false,
+          allowOutsideClick: false,
+          background: dark ? '#1e293b' : '#ffffff',
+          color: dark ? '#f8fafc' : '#1e293b',
+        });
+
+        try {
+          const resp = await fetch('/api/notifications/preferences');
+          if (!resp.ok) throw new Error('Failed to load preferences');
+          const data = await resp.json();
+          const p = data.preferences || {};
+
+          const modalHtml = `
+            <div class="text-start">
+              <p class="text-muted small mb-3">Configure default alert delivery channels, quiet hours suppression window, and test delivery targets.</p>
+
+              <!-- Default Channel Selection -->
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Default Delivery Channel</label>
+                <select id="prefDefaultChannel" class="form-select form-select-sm">
+                  <option value="IN_APP" ${p.defaultChannel === 'IN_APP' ? 'selected' : ''}>📱 In-App (Dashboard Only)</option>
+                  <option value="TELEGRAM" ${p.defaultChannel === 'TELEGRAM' ? 'selected' : ''}>✈️ Telegram Bot API</option>
+                  <option value="DISCORD" ${p.defaultChannel === 'DISCORD' ? 'selected' : ''}>💬 Discord Webhook</option>
+                  <option value="EMAIL" ${p.defaultChannel === 'EMAIL' ? 'selected' : ''}>✉️ Email (SMTP / Direct)</option>
+                </select>
+              </div>
+
+              <!-- Channel Destination Targets (Encrypted at rest) -->
+              <div class="card p-2 mb-3 bg-body-tertiary border">
+                <div class="fw-semibold small mb-2 d-flex justify-content-between">
+                  <span>🔒 Encrypted Destination Targets</span>
+                  <span class="badge bg-secondary-subtle text-secondary border font-monospace" style="font-size: 0.65rem;">AES-256-GCM</span>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small mb-1">Telegram Chat ID / User Handle</label>
+                  <input type="text" id="prefTelegramTarget" class="form-control form-control-sm font-monospace" placeholder="@my_chat_id or 12345678" value="${escapeHtml(p.telegramTarget || '')}">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small mb-1">Discord Webhook URL</label>
+                  <input type="text" id="prefDiscordTarget" class="form-control form-control-sm font-monospace" placeholder="https://discord.com/api/webhooks/..." value="${escapeHtml(p.discordTarget || '')}">
+                </div>
+                <div>
+                  <label class="form-label small mb-1">Notification Email</label>
+                  <input type="email" id="prefEmailTarget" class="form-control form-control-sm" placeholder="trader@example.com" value="${escapeHtml(p.emailTarget || '')}">
+                </div>
+              </div>
+
+              <!-- Quiet Hours Suppression -->
+              <div class="card p-2 mb-3 bg-body-tertiary border">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="fw-semibold small">🌙 Quiet Hours (Mute Outbound Alerts)</span>
+                  <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="prefQuietEnabled" ${p.quietHoursEnabled ? 'checked' : ''}>
+                  </div>
+                </div>
+                <div class="row g-2">
+                  <div class="col-6">
+                    <label class="form-label small text-secondary mb-1">Start Time</label>
+                    <input type="time" id="prefQuietStart" class="form-control form-control-sm" value="${p.quietHoursStart || '22:00'}">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small text-secondary mb-1">End Time</label>
+                    <input type="time" id="prefQuietEnd" class="form-control form-control-sm" value="${p.quietHoursEnd || '07:00'}">
+                  </div>
+                </div>
+                <small class="text-secondary mt-1 d-block" style="font-size: 0.72rem;">Alerts during this window are silently captured in In-App history.</small>
+              </div>
+
+              <!-- Send Test Notification Button Section -->
+              <div class="p-2 border rounded bg-body-secondary d-flex justify-content-between align-items-center">
+                <div>
+                  <div class="fw-semibold small">🚀 Test Notification Engine</div>
+                  <div class="text-secondary" style="font-size: 0.72rem;">Dispatches a sample trigger alert right now.</div>
+                </div>
+                <button type="button" id="btnTriggerTestNotif" class="btn btn-warning btn-sm fw-semibold">
+                  Send Test Alert
+                </button>
+              </div>
+            </div>
+          `;
+
+          const result = await Swal.fire({
+            title: '🔔 Notification Reliability Settings',
+            html: modalHtml,
+            width: '560px',
+            showCancelButton: true,
+            confirmButtonText: 'Save Preferences',
+            cancelButtonText: 'Close',
+            confirmButtonColor: '#0d6efd',
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+            didOpen: () => {
+              // Wire up "Send test notification" button inside modal
+              const btnTest = document.getElementById('btnTriggerTestNotif');
+              if (btnTest) {
+                btnTest.addEventListener('click', async () => {
+                  const channel = document.getElementById('prefDefaultChannel')?.value || 'IN_APP';
+                  let target = '';
+                  if (channel === 'TELEGRAM') target = document.getElementById('prefTelegramTarget')?.value;
+                  else if (channel === 'DISCORD') target = document.getElementById('prefDiscordTarget')?.value;
+                  else if (channel === 'EMAIL') target = document.getElementById('prefEmailTarget')?.value;
+
+                  btnTest.disabled = true;
+                  btnTest.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending...';
+
+                  try {
+                    const testResp = await fetch('/api/notifications/test', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ channel, target }),
+                    });
+                    const testResult = await testResp.json();
+                    if (!testResp.ok) throw new Error(testResult.error || 'Failed to dispatch test notification');
+
+                    Swal.showValidationMessage('');
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Test Alert Dispatched!',
+                      text: testResult.message,
+                      timer: 2000,
+                      showConfirmButton: false,
+                      background: dark ? '#1e293b' : '#ffffff',
+                      color: dark ? '#f8fafc' : '#1e293b',
+                    });
+                  } catch (err) {
+                    Swal.fire({
+                      icon: 'error',
+                      title: 'Delivery Failed',
+                      text: err.message,
+                      background: dark ? '#1e293b' : '#ffffff',
+                      color: dark ? '#f8fafc' : '#1e293b',
+                    });
+                  } finally {
+                    btnTest.disabled = false;
+                    btnTest.textContent = 'Send Test Alert';
+                  }
+                });
+              }
+            },
+            preConfirm: async () => {
+              const default_channel = document.getElementById('prefDefaultChannel')?.value || 'IN_APP';
+              const telegram_target = document.getElementById('prefTelegramTarget')?.value || '';
+              const discord_target = document.getElementById('prefDiscordTarget')?.value || '';
+              const email_target = document.getElementById('prefEmailTarget')?.value || '';
+              const quiet_hours_enabled = document.getElementById('prefQuietEnabled')?.checked || false;
+              const quiet_hours_start = document.getElementById('prefQuietStart')?.value || '22:00';
+              const quiet_hours_end = document.getElementById('prefQuietEnd')?.value || '07:00';
+
+              try {
+                const saveResp = await fetch('/api/notifications/preferences', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    default_channel,
+                    telegram_target,
+                    discord_target,
+                    email_target,
+                    quiet_hours_enabled,
+                    quiet_hours_start,
+                    quiet_hours_end,
+                  }),
+                });
+                const saveResult = await saveResp.json();
+                if (!saveResp.ok) throw new Error(saveResult.error || 'Failed to save preferences');
+                return saveResult;
+              } catch (err) {
+                Swal.showValidationMessage(err.message);
+                return false;
+              }
+            },
+          });
+
+          if (result.isConfirmed) {
+            Swal.fire({
+              icon: 'success',
+              title: 'Preferences Saved',
+              text: 'Notification channels and quiet hours updated.',
+              timer: 1500,
+              showConfirmButton: false,
+              background: dark ? '#1e293b' : '#ffffff',
+              color: dark ? '#f8fafc' : '#1e293b',
+            });
+          }
+        } catch (err) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: err.message,
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+          });
+        }
+      });
+    });
+  </script>
 
   <!-- Theme Toggle Client Controller -->
   <script>

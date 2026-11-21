@@ -1,36 +1,127 @@
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <h5 class="fw-bold m-0 text-body">Market Watchlist & Portfolio</h5>
+    <span class="badge bg-primary-subtle text-primary border"><%= assets.length %> Assets</span>
+    <% if (locals.portfolioSummary && locals.portfolioSummary.hasHoldings) { %>
+      <span class="badge bg-success-subtle text-success border">
+        Portfolio: $<%= Number(locals.portfolioSummary.totalValue.toFixed(2)).toLocaleString() %>
+      </span>
+      <% 
+        const plVal = locals.portfolioSummary.totalPl;
+        const plPct = locals.portfolioSummary.totalPlPct;
+        const plBadgeClass = plVal >= 0 ? 'bg-success-subtle text-success border-success-subtle' : 'bg-danger-subtle text-danger border-danger-subtle';
+        const plSign = plVal >= 0 ? '+' : '';
+      %>
+      <span class="badge <%= plBadgeClass %> border small">
+        Unrealised P/L: <%= plSign %>$<%= Number(Math.abs(plVal).toFixed(2)).toLocaleString() %> (<%= plSign %><%= plPct.toFixed(2) %>%)
+      </span>
+    <% } %>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <button type="button" class="btn btn-sm btn-outline-primary shadow-sm d-flex align-items-center gap-1" id="btnOpenWatchlistModal">
+      <span>🪙</span> Manage Watchlist & Holdings
+    </button>
+  </div>
+</div>
+
 <div class="row g-3 mb-4">
   <% for (let asset of assets) { 
        let iconClass = 'asset-icon-btc';
-       let iconSymbol = '₿';
-       if (asset.symbol.includes('ETH')) {
+       let iconSymbol = '◈';
+       if (asset.symbol.includes('BTC')) {
+         iconClass = 'asset-icon-btc';
+         iconSymbol = '₿';
+       } else if (asset.symbol.includes('ETH')) {
          iconClass = 'asset-icon-eth';
          iconSymbol = 'Ξ';
        } else if (asset.symbol.includes('SOL')) {
          iconClass = 'asset-icon-sol';
          iconSymbol = '◎';
+       } else if (asset.symbol.includes('XRP')) {
+         iconClass = 'asset-icon-btc';
+         iconSymbol = '✕';
+       } else if (asset.symbol.includes('ADA')) {
+         iconClass = 'asset-icon-eth';
+         iconSymbol = '₳';
+       } else if (asset.symbol.includes('DOGE')) {
+         iconClass = 'asset-icon-sol';
+         iconSymbol = 'Ð';
        }
+       // Responsive column width: 4 or more assets split to 3 cols on xl, 2 on md
+       const colClass = assets.length <= 3 ? 'col-lg-4 col-md-6 col-12' : 'col-xl-3 col-lg-4 col-md-6 col-12';
+       const isPinned = Boolean(asset.is_pinned);
+       const hasHolding = asset.holding_qty !== null && asset.holding_qty !== undefined && Number(asset.holding_qty) > 0;
   %>
-    <div class="col-md-4 col-sm-12">
-      <div class="card h-100 shadow-sm">
+    <div class="<%= colClass %>">
+      <div class="card h-100 shadow-sm border-0 <%= isPinned ? 'border border-warning border-2' : '' %>">
         <div class="card-body p-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="d-flex align-items-center gap-2">
               <span class="<%= iconClass %>"><%= iconSymbol %></span>
               <div>
-                <span class="fw-bold text-body"><%= asset.symbol %></span>
+                <div class="d-flex align-items-center gap-1">
+                  <span class="fw-bold text-body"><%= asset.symbol %></span>
+                  <% if (isPinned) { %>
+                    <span class="text-warning small" title="Pinned Favourite">★</span>
+                  <% } %>
+                </div>
                 <small class="text-secondary d-block" style="font-size: 0.75rem;"><%= asset.name %></small>
               </div>
             </div>
             <span class="badge bg-secondary-subtle text-secondary border small">D1 Close</span>
           </div>
+
           <div class="d-flex align-items-baseline justify-content-between mt-3">
             <h3 class="card-title fw-bold text-body m-0">
-              $<%= Number(asset.last_d1_close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+              $<%= Number(asset.last_d1_close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: (Number(asset.last_d1_close) < 1 ? 4 : 2) }) %>
             </h3>
-            <span class="small text-success fw-semibold">● Live D1</span>
+            <% if (asset.change_24h_pct !== undefined && asset.change_24h_pct !== null) { 
+                 const pctNum = Number(asset.change_24h_pct);
+                 const pctColor = pctNum >= 0 ? 'text-success' : 'text-danger';
+                 const pctSign = pctNum >= 0 ? '+' : '';
+            %>
+              <span class="small <%= pctColor %> fw-bold">
+                <%= pctSign %><%= pctNum.toFixed(2) %>%
+              </span>
+            <% } else { %>
+              <span class="small text-success fw-semibold">● Live D1</span>
+            <% } %>
           </div>
-          <div class="text-end mt-2">
-            <small class="text-secondary" style="font-size: 0.75rem;">
+
+          <!-- Portfolio Holdings & Unrealised P/L Section -->
+          <% if (hasHolding) { 
+               const plNum = Number(asset.unrealised_pl);
+               const plColor = plNum >= 0 ? 'text-success' : 'text-danger';
+               const plSign = plNum >= 0 ? '+' : '';
+          %>
+            <div class="mt-2 pt-2 border-top border-secondary-subtle small bg-body-tertiary p-2 rounded">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="text-secondary">Holding:</span>
+                <span class="fw-semibold text-body"><%= Number(asset.holding_qty) %> <%= asset.symbol.split('/')[0] %></span>
+              </div>
+              <% if (asset.avg_cost !== null && asset.avg_cost !== undefined) { %>
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="text-secondary">Avg Cost:</span>
+                  <span class="text-body">$<%= Number(Number(asset.avg_cost).toFixed(2)).toLocaleString() %></span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-1">
+                  <span class="text-secondary">Unrealised P/L:</span>
+                  <span class="<%= plColor %> fw-bold">
+                    <%= plSign %>$<%= Number(Math.abs(plNum).toFixed(2)).toLocaleString() %>
+                    <% if (asset.unrealised_pl_pct !== null) { %>
+                      (<%= plSign %><%= Number(asset.unrealised_pl_pct).toFixed(2) %>%)
+                    <% } %>
+                  </span>
+                </div>
+              <% } %>
+            </div>
+          <% } %>
+
+          <div class="d-flex justify-content-between align-items-center mt-2">
+            <span class="badge bg-secondary-subtle text-secondary" style="font-size: 0.68rem;">
+              Rank #<%= asset.sort_order || 1 %>
+            </span>
+            <small class="text-secondary" style="font-size: 0.72rem;">
               Synced: <%= asset.last_updated ? asset.last_updated.replace('T', ' ').slice(0, 19) : 'Just now' %>
             </small>
           </div>
