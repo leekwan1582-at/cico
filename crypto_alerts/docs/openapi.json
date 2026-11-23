@@ -1,0 +1,598 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Crypto Daily Alerts API",
+    "version": "1.0.0",
+    "description": "Production REST API for cryptocurrency price alert automation, real-time data streaming (SSE), market candles, Personal Access Tokens (PAT), and Price Alerts Watchlist CRUD operations."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Local Application Server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Price Alerts Watchlist",
+      "description": "Full CRUD operations for managing price alerts and triggers"
+    },
+    {
+      "name": "Data Export",
+      "description": "Export price alerts in CSV or JSON format"
+    },
+    {
+      "name": "Real-Time Streaming",
+      "description": "Server-Sent Events (SSE) live price and trigger push updates"
+    },
+    {
+      "name": "Personal Access Tokens",
+      "description": "Manage scoped, revocable Personal Access Tokens (PAT) for API automation"
+    },
+    {
+      "name": "Market Data & Charts",
+      "description": "Historical candlestick series and market pair catalog"
+    },
+    {
+      "name": "Coin Deep Analysis & Reports",
+      "description": "Multi-dimensional coin analysis (technicals, sentiment, 200W SMA macro floor) and exportable reports"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "cpat_...",
+        "description": "Personal Access Token generated via /api/tokens"
+      },
+      "CookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "jwt_token",
+        "description": "Standard JWT authentication session cookie"
+      }
+    },
+    "schemas": {
+      "PriceAlert": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "user_id": { "type": "integer", "example": 1 },
+          "asset_id": { "type": "integer", "example": 1 },
+          "asset_symbol": { "type": "string", "example": "BTC/USDT" },
+          "asset_name": { "type": "string", "example": "Bitcoin" },
+          "exchange_id": { "type": "integer", "example": 1 },
+          "exchange_name": { "type": "string", "example": "OKX Singapore" },
+          "condition_type": {
+            "type": "string",
+            "enum": [
+              "ABOVE",
+              "BELOW",
+              "PCT_CHANGE_24H_ABOVE",
+              "PCT_CHANGE_24H_BELOW",
+              "TRAILING_STOP",
+              "RSI_ABOVE",
+              "RSI_BELOW",
+              "SMA_GOLDEN_CROSS",
+              "SMA_DEATH_CROSS",
+              "VOLUME_SPIKE"
+            ],
+            "example": "ABOVE"
+          },
+          "condition_metric": {
+            "type": "string",
+            "enum": ["PRICE", "PCT_CHANGE_24H", "TRAILING_STOP", "RSI_14", "SMA_CROSS", "VOLUME_SPIKE"],
+            "example": "PRICE"
+          },
+          "target_price": { "type": "number", "example": 95000.00 },
+          "reference_baseline": { "type": "number", "nullable": true, "example": 88500.00 },
+          "peak_price": { "type": "number", "nullable": true, "example": 96000.00 },
+          "is_triggered": { "type": "boolean", "example": false },
+          "notification_channel": {
+            "type": "string",
+            "enum": ["IN_APP", "EMAIL", "TELEGRAM", "DISCORD"],
+            "example": "IN_APP"
+          },
+          "recipient_target": { "type": "string", "nullable": true, "example": "@my_channel" },
+          "triggered_at": { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateAlertInput": {
+        "type": "object",
+        "required": ["asset_id", "exchange_id", "target_price", "condition_type"],
+        "properties": {
+          "asset_id": { "type": "integer", "example": 1, "description": "ID of tracked crypto asset" },
+          "exchange_id": { "type": "integer", "example": 1, "description": "ID of source exchange" },
+          "target_price": { "type": "number", "example": 95000.00, "description": "Threshold target value or percentage" },
+          "condition_type": {
+            "type": "string",
+            "enum": [
+              "ABOVE",
+              "BELOW",
+              "PCT_CHANGE_24H_ABOVE",
+              "PCT_CHANGE_24H_BELOW",
+              "TRAILING_STOP",
+              "RSI_ABOVE",
+              "RSI_BELOW",
+              "SMA_GOLDEN_CROSS",
+              "SMA_DEATH_CROSS",
+              "VOLUME_SPIKE"
+            ],
+            "example": "ABOVE"
+          },
+          "notification_channel": {
+            "type": "string",
+            "enum": ["IN_APP", "EMAIL", "TELEGRAM", "DISCORD"],
+            "default": "IN_APP"
+          },
+          "recipient_target": { "type": "string", "example": "@my_telegram_handle" }
+        }
+      },
+      "UpdateAlertInput": {
+        "type": "object",
+        "required": ["asset_id", "exchange_id", "target_price", "condition_type"],
+        "properties": {
+          "asset_id": { "type": "integer", "example": 1 },
+          "exchange_id": { "type": "integer", "example": 1 },
+          "target_price": { "type": "number", "example": 92000.00 },
+          "condition_type": { "type": "string", "example": "BELOW" },
+          "notification_channel": { "type": "string", "example": "TELEGRAM" },
+          "recipient_target": { "type": "string", "example": "@alerts_channel" }
+        }
+      },
+      "AlertEvent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "alert_id": { "type": "integer", "example": 1 },
+          "event_type": { "type": "string", "enum": ["CREATED", "TRIGGERED", "RE-ARMED"], "example": "TRIGGERED" },
+          "price_at_event": { "type": "number", "example": 95200.00 },
+          "metric_value": { "type": "number", "example": 95200.00 },
+          "message": { "type": "string", "example": "Condition ABOVE met at market price $95,200" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiToken": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "name": { "type": "string", "example": "Python Trading Script" },
+          "prefix": { "type": "string", "example": "cpat_a1b2c3d4" },
+          "scopes": { "type": "array", "items": { "type": "string" }, "example": ["read:alerts", "write:alerts"] },
+          "lastUsedAt": { "type": "string", "nullable": true },
+          "expiresAt": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "security": [
+    { "BearerAuth": [] },
+    { "CookieAuth": [] }
+  ],
+  "paths": {
+    "/alerts": {
+      "post": {
+        "tags": ["Price Alerts Watchlist"],
+        "summary": "Create a New Price Alert",
+        "description": "Creates and arms a new price alert record wrapped in an atomic transaction, scoped to the authenticated user. Logs a CREATED audit event.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": { "$ref": "#/components/schemas/CreateAlertInput" }
+            },
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAlertInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Alert created successfully (JSON response for API / AJAX)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "message": { "type": "string", "example": "Alert created successfully." },
+                    "alertId": { "type": "integer", "example": 12 },
+                    "alert": { "$ref": "#/components/schemas/PriceAlert" }
+                  }
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "Redirects to dashboard /?msg=saved on HTML form submission"
+          },
+          "400": { "description": "Invalid input parameters (e.g. invalid target price or condition type)" },
+          "401": { "description": "Unauthorized — requires login or valid Bearer token" },
+          "403": { "description": "Forbidden — token lacks 'write:alerts' scope" }
+        }
+      }
+    },
+    "/alerts/{id}/update": {
+      "post": {
+        "tags": ["Price Alerts Watchlist"],
+        "summary": "Update & Re-Arm an Existing Price Alert",
+        "description": "Updates parameters of an alert owned by the user, re-arms it (`is_triggered = FALSE`), and logs a RE-ARMED audit trail event.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Alert ID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": { "$ref": "#/components/schemas/UpdateAlertInput" }
+            },
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateAlertInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "message": { "type": "string", "example": "Alert updated and re-armed successfully." },
+                    "alertId": { "type": "integer", "example": 12 }
+                  }
+                }
+              }
+            }
+          },
+          "302": { "description": "Redirects to dashboard /?msg=updated on form submission" },
+          "400": { "description": "Invalid alert or parameter inputs" },
+          "404": { "description": "Alert not found or unauthorized (IDOR protected)" }
+        }
+      }
+    },
+    "/alerts/{id}/delete": {
+      "post": {
+        "tags": ["Price Alerts Watchlist"],
+        "summary": "Delete a Price Alert",
+        "description": "Permanently deletes a price alert record owned by the authenticated user.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Alert ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert deleted successfully (JSON)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "message": { "type": "string", "example": "Alert deleted successfully." },
+                    "alertId": { "type": "integer", "example": 12 }
+                  }
+                }
+              }
+            }
+          },
+          "302": { "description": "Redirects to dashboard / on standard form submission" },
+          "400": { "description": "Invalid alert ID" },
+          "404": { "description": "Alert not found or unauthorized" }
+        }
+      }
+    },
+    "/api/alerts/{id}/events": {
+      "get": {
+        "tags": ["Price Alerts Watchlist"],
+        "summary": "Get Alert Event Audit Trail",
+        "description": "Retrieves historical audit trail events (CREATED, TRIGGERED, RE-ARMED) for a specific alert.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Alert ID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit trail event history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "alertId": { "type": "integer", "example": 1 },
+                    "events": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AlertEvent" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Alert not found or unauthorized" }
+        }
+      }
+    },
+    "/api/alerts.json": {
+      "get": {
+        "tags": ["Data Export"],
+        "summary": "Export Price Alerts in JSON format",
+        "description": "Returns all price alerts owned by the authenticated user with status filtering options.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["all", "active", "triggered"], "default": "all" },
+            "description": "Filter alerts by active or triggered state"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of exported alerts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "count": { "type": "integer" },
+                    "exportedAt": { "type": "string", "format": "date-time" },
+                    "alerts": { "type": "array", "items": { "$ref": "#/components/schemas/PriceAlert" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Insufficient scope (requires 'read:alerts')" }
+        }
+      }
+    },
+    "/api/alerts.csv": {
+      "get": {
+        "tags": ["Data Export"],
+        "summary": "Export Price Alerts as RFC 4180 CSV",
+        "description": "Downloads an RFC 4180 CSV file containing user price alerts with anti-injection sanitization.",
+        "responses": {
+          "200": {
+            "description": "CSV spreadsheet attachment",
+            "content": {
+              "text/csv": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Insufficient scope" }
+        }
+      }
+    },
+    "/api/stream": {
+      "get": {
+        "tags": ["Real-Time Streaming"],
+        "summary": "Server-Sent Events (SSE) Real-Time Data Stream",
+        "description": "Streams real-time price updates, alert trigger transitions, and KPI ribbon counts directly over HTTP.",
+        "responses": {
+          "200": {
+            "description": "Continuous text/event-stream response",
+            "content": {
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tokens": {
+      "get": {
+        "tags": ["Personal Access Tokens"],
+        "summary": "List Personal Access Tokens",
+        "description": "Returns active API tokens owned by the authenticated user (token secret hash is masked).",
+        "responses": {
+          "200": {
+            "description": "List of user API tokens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "tokens": { "type": "array", "items": { "$ref": "#/components/schemas/ApiToken" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Personal Access Tokens"],
+        "summary": "Create Personal Access Token",
+        "description": "Creates a new scoped, revocable Personal Access Token (PAT). Returns plaintext secret once.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "example": "My Trading Bot" },
+                  "scopes": { "type": "array", "items": { "type": "string" }, "example": ["read:alerts", "write:alerts"] },
+                  "expiresInDays": { "type": "integer", "example": 90 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "token": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "integer" },
+                        "rawToken": { "type": "string", "example": "cpat_9f82ab74..." },
+                        "name": { "type": "string" },
+                        "prefix": { "type": "string" },
+                        "scopes": { "type": "array", "items": { "type": "string" } },
+                        "expiresAt": { "type": "string", "nullable": true }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tokens/{id}": {
+      "delete": {
+        "tags": ["Personal Access Tokens"],
+        "summary": "Revoke Personal Access Token",
+        "description": "Permanently revokes and deletes a Personal Access Token.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Token revoked successfully" },
+          "404": { "description": "Token not found" }
+        }
+      }
+    },
+    "/api/assets/{id}/chart-data": {
+      "get": {
+        "tags": ["Market Data & Charts"],
+        "summary": "Fetch OHLCV Candlestick Series & Annotations",
+        "description": "Returns persisted candlestick series (1h, 4h, 1d, 1w) and price alert target annotations formatted for ApexCharts.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Asset ID" },
+          { "name": "exchange_id", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "days", "in": "query", "schema": { "type": "integer", "enum": [7, 30, 180], "default": 30 } },
+          { "name": "timeframe", "in": "query", "schema": { "type": "string", "enum": ["1h", "4h", "1d", "1w"], "default": "1d" } }
+        ],
+        "responses": {
+          "200": { "description": "Candlestick series array and chart annotations" },
+          "400": { "description": "Invalid asset ID" },
+          "404": { "description": "Asset not found" }
+        }
+      }
+    },
+    "/api/assets/{id}/analysis": {
+      "post": {
+        "tags": ["Coin Deep Analysis & Reports"],
+        "summary": "Execute Deep Coin Analysis",
+        "description": "Performs comprehensive multi-timeframe technical indicator calculation (RSI, MACD, Bollinger Bands, ATR), 200W SMA generational bottom evaluation, Fear & Greed market sentiment synthesis, composite scoring (0-100), and generates actionable buy option recommendations.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Asset ID" }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "exchange_id": { "type": "integer", "default": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Full analysis report object with score, signals, and buy options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "report": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "integer" },
+                        "symbol": { "type": "string" },
+                        "overallScore": { "type": "integer", "example": 85 },
+                        "overallSignal": { "type": "string", "example": "STRONG_BUY" },
+                        "technicalScore": { "type": "integer" },
+                        "sentimentScore": { "type": "integer" },
+                        "riskLevel": { "type": "string", "example": "LOW" },
+                        "summaryText": { "type": "string" },
+                        "buyOption": {
+                          "type": "object",
+                          "properties": {
+                            "eligible": { "type": "boolean" },
+                            "badge": { "type": "string", "example": "💎 Generational Value Buy (<= 200W SMA)" },
+                            "targetEntry": { "type": "number" },
+                            "suggestedTakeProfit": { "type": "number" },
+                            "suggestedStopLoss": { "type": "number" },
+                            "rationale": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid asset ID" },
+          "404": { "description": "Asset not found" }
+        }
+      }
+    },
+    "/api/assets/{id}/analysis/latest": {
+      "get": {
+        "tags": ["Coin Deep Analysis & Reports"],
+        "summary": "Get Latest Coin Analysis Report",
+        "description": "Retrieves the most recent analysis report for the specified asset (or executes fresh analysis on-demand).",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Asset ID" }
+        ],
+        "responses": {
+          "200": { "description": "Latest report object" },
+          "400": { "description": "Invalid asset ID" }
+        }
+      }
+    },
+    "/api/reports/{id}.json": {
+      "get": {
+        "tags": ["Coin Deep Analysis & Reports"],
+        "summary": "Export Analysis Report as JSON",
+        "description": "Exports raw structured analysis report and metrics by Report ID.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Report ID" }
+        ],
+        "responses": {
+          "200": { "description": "Full structured JSON report" },
+          "404": { "description": "Report not found" }
+        }
+      }
+    },
+    "/reports/{id}/print": {
+      "get": {
+        "tags": ["Coin Deep Analysis & Reports"],
+        "summary": "Printable / PDF View of Analysis Report",
+        "description": "Renders a clean printable HTML view styled for browser printing and Save as PDF.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "Report ID" }
+        ],
+        "responses": {
+          "200": { "description": "Print-styled HTML report" },
+          "404": { "description": "Report not found" }
+        }
+      }
+    }
+  }
+}

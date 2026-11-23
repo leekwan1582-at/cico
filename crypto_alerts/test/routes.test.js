@@ -292,6 +292,74 @@ test("Phase 4 Integration Tests - Express CRUD Routes & Error Guards", async (t)
         return [{ insertId: 101 }];
       }
 
+      // SELECT asset_analysis_reports
+      if (sql.includes("FROM asset_analysis_reports") && sql.includes("WHERE r.id = ?")) {
+        return [
+          [
+            {
+              id: 1,
+              asset_id: 1,
+              user_id: 1,
+              username: "leekwan",
+              symbol: "BTC/USDT",
+              name: "Bitcoin",
+              last_d1_close: 89000,
+              overall_score: 85,
+              overall_signal: "STRONG_BUY",
+              technical_score: 80,
+              sentiment_score: 65,
+              risk_level: "LOW",
+              support_price: 84000,
+              resistance_price: 94000,
+              summary_text: "Strong bullish setup. 200W SMA Generational Value floor intact.",
+              metrics_json: JSON.stringify({
+                asset: { id: 1, symbol: "BTC/USDT", currentPrice: 89000 },
+                technicals: { rsi14: 45, sma50: 82000, sma200: 68000 },
+                sma200wEval: { sma200w: 60000, distancePct: 48.33, isAtOrBelow200w: false, isApproaching200w: false },
+                sentiment: { fearAndGreed: { value: 65, classification: "Greed" } },
+                buyOption: {
+                  eligible: true,
+                  badge: "💎 Generational Value Buy (<= 200W SMA)",
+                  targetEntry: 60000,
+                  suggestedTakeProfit: 95000,
+                  suggestedStopLoss: 55000,
+                  rationale: "Historical macro accumulation point."
+                }
+              }),
+              created_at: "2026-11-22 10:00:00"
+            }
+          ]
+        ];
+      }
+      if (sql.includes("FROM asset_analysis_reports") && sql.includes("WHERE r.asset_id = ?")) {
+        return [
+          [
+            {
+              id: 1,
+              asset_id: 1,
+              symbol: "BTC/USDT",
+              name: "Bitcoin",
+              last_d1_close: 89000,
+              overall_score: 85,
+              overall_signal: "STRONG_BUY",
+              technical_score: 80,
+              sentiment_score: 65,
+              risk_level: "LOW",
+              support_price: 84000,
+              resistance_price: 94000,
+              summary_text: "Strong bullish setup.",
+              metrics_json: JSON.stringify({
+                buyOption: { eligible: true, badge: "💎 Generational Value Buy" }
+              }),
+              created_at: "2026-11-22 10:00:00"
+            }
+          ]
+        ];
+      }
+      if (sql.includes("INSERT INTO asset_analysis_reports")) {
+        return [{ insertId: 1 }];
+      }
+
       // SELECT alerts with joins & filters
       if (sql.includes("FROM price_alerts pa") && sql.includes("JOIN users u")) {
         return [
@@ -796,6 +864,35 @@ test("Phase 4 Integration Tests - Express CRUD Routes & Error Guards", async (t)
     assert.equal(json.timeframe.currentDays, 180);
   });
 
+  await t.test("GET /api/assets/:id/chart-data supports multi-timeframe candles (1h, 4h, 1d, 1w) (Phase 8+ 3.6)", async () => {
+    // 1h timeframe
+    const res1h = await fetch(`${baseUrl}/api/assets/1/chart-data?exchange_id=1&days=7&timeframe=1h`, {
+      headers: authHeaders,
+    });
+    assert.equal(res1h.status, 200);
+    const json1h = await res1h.json();
+    assert.ok(Array.isArray(json1h.series));
+    assert.ok(json1h.series.length > 0);
+
+    // 4h timeframe
+    const res4h = await fetch(`${baseUrl}/api/assets/1/chart-data?exchange_id=1&days=30&timeframe=4h`, {
+      headers: authHeaders,
+    });
+    assert.equal(res4h.status, 200);
+    const json4h = await res4h.json();
+    assert.ok(Array.isArray(json4h.series));
+    assert.ok(json4h.series.length > 0);
+
+    // 1w timeframe
+    const res1w = await fetch(`${baseUrl}/api/assets/1/chart-data?exchange_id=1&days=180&timeframe=1w`, {
+      headers: authHeaders,
+    });
+    assert.equal(res1w.status, 200);
+    const json1w = await res1w.json();
+    assert.ok(Array.isArray(json1w.series));
+    assert.ok(json1w.series.length > 0);
+  });
+
   await t.test("GET /api/assets/:id/chart-data returns 400 on invalid asset ID", async () => {
     const res = await fetch(`${baseUrl}/api/assets/invalid-id/chart-data`, {
       headers: authHeaders,
@@ -1234,5 +1331,184 @@ test("Phase 4 Integration Tests - Express CRUD Routes & Error Guards", async (t)
       }),
     });
     assert.equal(badRes.status, 400);
+  });
+
+  // ==========================================
+  // Phase 8+ 3.5: Technical-Indicator Alerts
+  // ==========================================
+  await t.test("Technical Indicator Alerts: POST /alerts creates RSI_14, SMA_CROSS, and VOLUME_SPIKE alerts", async () => {
+    // 1. Create RSI_14 alert (Overbought: RSI_ABOVE 70)
+    const rsiRes = await fetch(`${baseUrl}/alerts`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/x-www-form-urlencoded", redirect: "manual" },
+      body: new URLSearchParams({
+        user_id: "1",
+        asset_id: "1",
+        exchange_id: "1",
+        condition_type: "RSI_ABOVE",
+        target_price: "70",
+        notification_channel: "IN_APP",
+      }).toString(),
+    });
+    assert.ok([200, 302, 303].includes(rsiRes.status), "RSI alert creation should redirect or succeed");
+
+    const rsiInsert = queryLog.find((q) => q.sql.includes("INSERT INTO price_alerts") && q.params && q.params.includes("RSI_14"));
+    assert.ok(rsiInsert, "Must insert alert with condition_metric = 'RSI_14'");
+    assert.ok(rsiInsert.params.includes("RSI_ABOVE"), "Must have condition_type = 'RSI_ABOVE'");
+
+    // 2. Create SMA_CROSS alert (SMA_GOLDEN_CROSS)
+    const smaRes = await fetch(`${baseUrl}/alerts`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/x-www-form-urlencoded", redirect: "manual" },
+      body: new URLSearchParams({
+        user_id: "1",
+        asset_id: "1",
+        exchange_id: "1",
+        condition_type: "SMA_GOLDEN_CROSS",
+        target_price: "1",
+        notification_channel: "IN_APP",
+      }).toString(),
+    });
+    assert.ok([200, 302, 303].includes(smaRes.status), "SMA alert creation should redirect or succeed");
+
+    const smaInsert = queryLog.find((q) => q.sql.includes("INSERT INTO price_alerts") && q.params && q.params.includes("SMA_CROSS"));
+    assert.ok(smaInsert, "Must insert alert with condition_metric = 'SMA_CROSS'");
+    assert.ok(smaInsert.params.includes("SMA_GOLDEN_CROSS"), "Must have condition_type = 'SMA_GOLDEN_CROSS'");
+
+    // 3. Create VOLUME_SPIKE alert (target = 2.5x 20-day average)
+    const volRes = await fetch(`${baseUrl}/alerts`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/x-www-form-urlencoded", redirect: "manual" },
+      body: new URLSearchParams({
+        user_id: "1",
+        asset_id: "1",
+        exchange_id: "1",
+        condition_type: "VOLUME_SPIKE",
+        target_price: "2.5",
+        notification_channel: "IN_APP",
+      }).toString(),
+    });
+    assert.ok([200, 302, 303].includes(volRes.status), "Volume spike alert creation should redirect or succeed");
+
+    const volInsert = queryLog.find((q) => q.sql.includes("INSERT INTO price_alerts") && q.params && q.params.includes("VOLUME_SPIKE"));
+    assert.ok(volInsert, "Must insert alert with condition_metric = 'VOLUME_SPIKE'");
+    assert.ok(volInsert.params.includes("VOLUME_SPIKE"), "Must have condition_type = 'VOLUME_SPIKE'");
+  });
+
+  await t.test("Real-Time Updates: GET /api/stream establishes SSE connection and requires auth (Phase 8+ 3.7)", async () => {
+    // 1. Unauthenticated request should redirect to login or be rejected
+    const unauthRes = await fetch(`${baseUrl}/api/stream`, {
+      redirect: "manual",
+    });
+    assert.ok([302, 401, 403].includes(unauthRes.status), "Unauthenticated SSE request must be protected");
+
+    // 2. Authenticated request establishes SSE stream
+    const authHeaders = {
+      Cookie: `jwt_token=${authToken}`,
+    };
+
+    const controller = new AbortController();
+    const ssePromise = fetch(`${baseUrl}/api/stream`, {
+      headers: authHeaders,
+      signal: controller.signal,
+    });
+
+    const res = await ssePromise;
+    assert.equal(res.status, 200);
+    assert.ok(res.headers.get("content-type")?.includes("text/event-stream"));
+
+    // Read initial handshake packet from stream
+    const reader = res.body.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+
+    assert.ok(text.includes("event: connected"));
+    assert.ok(text.includes("clientId"));
+
+    // Clean up
+    controller.abort();
+  });
+
+  await t.test("Data Export & REST API: GET /api/alerts.csv and /api/alerts.json (Phase 8+ 3.8)", async () => {
+    const authHeaders = {
+      Cookie: `jwt_token=${authToken}`,
+    };
+
+    // 1. GET /api/alerts.csv
+    const csvRes = await fetch(`${baseUrl}/api/alerts.csv`, { headers: authHeaders });
+    assert.equal(csvRes.status, 200);
+    assert.ok(csvRes.headers.get("content-type")?.includes("text/csv"));
+    assert.ok(csvRes.headers.get("content-disposition")?.includes("crypto_alerts_"));
+    const csvBody = await csvRes.text();
+    assert.ok(csvBody.includes("Asset Symbol"));
+    assert.ok(csvBody.includes("Target Price"));
+
+    // 2. GET /api/alerts.json
+    const jsonRes = await fetch(`${baseUrl}/api/alerts.json`, { headers: authHeaders });
+    assert.equal(jsonRes.status, 200);
+    const jsonData = await jsonRes.json();
+    assert.equal(jsonData.success, true);
+    assert.ok(Array.isArray(jsonData.alerts));
+
+    // 3. GET /api/openapi.json & GET /api/docs
+    const openapiRes = await fetch(`${baseUrl}/api/openapi.json`);
+    assert.equal(openapiRes.status, 200);
+    const spec = await openapiRes.json();
+    assert.equal(spec.openapi, "3.0.3");
+
+    const docsRes = await fetch(`${baseUrl}/api/docs`);
+    assert.equal(docsRes.status, 200);
+    const docsHtml = await docsRes.text();
+    assert.ok(docsHtml.includes("SwaggerUIBundle"));
+
+    // 4. GET /api/tokens (list tokens)
+    const tokensRes = await fetch(`${baseUrl}/api/tokens`, { headers: authHeaders });
+    assert.equal(tokensRes.status, 200);
+    const tokensData = await tokensRes.json();
+    assert.equal(tokensData.success, true);
+    assert.ok(Array.isArray(tokensData.tokens));
+  });
+
+  await t.test("Coin Deep Analysis & Reports: POST /api/assets/:id/analysis, GET latest, JSON and print view", async () => {
+    const authHeaders = {
+      Cookie: `jwt_token=${authToken}`,
+    };
+
+    // 1. POST /api/assets/:id/analysis
+    const postRes = await fetch(`${baseUrl}/api/assets/1/analysis`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ exchange_id: 1 })
+    });
+    assert.equal(postRes.status, 200);
+    const postData = await postRes.json();
+    assert.equal(postData.success, true);
+    assert.ok(postData.report);
+    assert.equal(postData.report.assetId, 1);
+    assert.ok(typeof postData.report.overallScore === "number");
+    assert.ok(postData.report.buyOption);
+
+    // 2. GET /api/assets/:id/analysis/latest
+    const latestRes = await fetch(`${baseUrl}/api/assets/1/analysis/latest`, { headers: authHeaders });
+    assert.equal(latestRes.status, 200);
+    const latestData = await latestRes.json();
+    assert.equal(latestData.success, true);
+    assert.equal(latestData.report.assetId, 1);
+
+    // 3. GET /api/reports/:id.json
+    const jsonRes = await fetch(`${baseUrl}/api/reports/1.json`, { headers: authHeaders });
+    assert.equal(jsonRes.status, 200);
+    const reportJson = await jsonRes.json();
+    assert.equal(reportJson.success, true);
+    assert.equal(reportJson.report.id, 1);
+    assert.ok(reportJson.report.metrics);
+
+    // 4. GET /reports/:id/print (Printable HTML view)
+    const printRes = await fetch(`${baseUrl}/reports/1/print`, { headers: authHeaders });
+    assert.equal(printRes.status, 200);
+    const printHtml = await printRes.text();
+    assert.ok(printHtml.includes("Deep Asset Analysis"));
+    assert.ok(printHtml.includes("Print / Save as PDF"));
+    assert.ok(printHtml.includes("200-Week SMA"));
   });
 });

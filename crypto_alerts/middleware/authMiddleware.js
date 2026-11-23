@@ -6,6 +6,7 @@
  */
 
 const authService = require("../services/authService");
+const tokenService = require("../services/tokenService");
 
 /**
  * Helper to parse cookies from the Cookie request header string.
@@ -47,19 +48,23 @@ function sanitizeRedirectUrl(url) {
 }
 
 /**
- * Middleware that requires valid authentication.
+ * Middleware that requires valid authentication via JWT session or Personal API Token (PAT).
  * If valid, sets `req.user` and calls next().
  * If invalid or absent:
  * - HTML requests: Redirects to `/login`
  * - API / AJAX requests: Returns 401 Unauthorized JSON
  */
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   let token = null;
+  let isBearerPat = false;
 
   // 1. Try Authorization header: Bearer <token>
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.slice(7).trim();
+    if (token.startsWith("cpat_")) {
+      isBearerPat = true;
+    }
   }
 
   // 2. Try Cookie: jwt_token
@@ -69,11 +74,29 @@ function requireAuth(req, res, next) {
   }
 
   if (token) {
-    const userPayload = authService.verifyToken(token);
-    if (userPayload) {
-      req.user = userPayload;
-      res.locals.currentUser = userPayload;
-      return next();
+    if (isBearerPat) {
+      try {
+        const verified = await tokenService.verifyToken(token);
+        if (verified && !verified.error) {
+          req.user = verified;
+          res.locals.currentUser = verified;
+          return next();
+        } else if (verified && verified.error === "INSUFFICIENT_SCOPE") {
+          return res.status(403).json({
+            error: "Forbidden",
+            message: `Token lacks required scope. Found: ${verified.userScopes.join(", ")}`,
+          });
+        }
+      } catch (err) {
+        // Fall through to 401
+      }
+    } else {
+      const userPayload = authService.verifyToken(token);
+      if (userPayload) {
+        req.user = userPayload;
+        res.locals.currentUser = userPayload;
+        return next();
+      }
     }
   }
 
@@ -81,13 +104,42 @@ function requireAuth(req, res, next) {
   if (req.xhr || req.headers.accept?.includes("application/json") || req.path.startsWith("/api/")) {
     return res.status(401).json({
       error: "Unauthorized",
-      message: "Please log in to access this resource.",
+      message: "Please log in or provide a valid API token to access this resource.",
     });
   }
 
   // Redirect to login page for browser sessions
   const safeRedirect = sanitizeRedirectUrl(req.originalUrl || "/");
   return res.redirect(`/login?redirect=${encodeURIComponent(safeRedirect)}`);
+}
+
+/**
+ * Middleware that requires a specific scope if authenticated via Personal API Token.
+ * JWT sessions automatically possess all scopes.
+ *
+ * @param {string} requiredScope - Scope name (e.g. 'read:alerts', 'write:alerts')
+ * @returns {import('express').RequestHandler}
+ */
+function requireScope(requiredScope) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized", message: "Authentication required" });
+    }
+
+    if (!req.user.isApiToken) {
+      return next();
+    }
+
+    const scopes = req.user.tokenScopes || [];
+    if (!scopes.includes(requiredScope.toLowerCase())) {
+      return res.status(403).json({
+        error: "Forbidden",
+        message: `API token lacks required scope: '${requiredScope}'. Available: [${scopes.join(", ")}]`,
+      });
+    }
+
+    next();
+  };
 }
 
 /**
@@ -176,6 +228,7 @@ module.exports = {
   requireAuth,
   requireRole,
   requireAdmin,
+  requireScope,
   optionalAuth,
   parseCookies,
   sanitizeRedirectUrl,

@@ -4,7 +4,8 @@
   "description": "Cryptocurrency Price Alert & Market Tracking Dashboard with multi-exchange D1 sync, technical indicators, and notifications",
   "main": "index.js",
   "directories": {
-    "doc": "docs"
+    "doc": "docs",
+    "test": "test"
   },
   "scripts": {
     "start": "node index.js",

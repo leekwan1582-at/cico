@@ -123,6 +123,23 @@
                       🛡️ Trailing Stop (X% drop from peak)
                     </option>
                   </optgroup>
+                  <optgroup label="Technical Indicators (Phase 8+ 3.5)">
+                    <option value="RSI_ABOVE" <%= (editAlert && editAlert.condition_type === 'RSI_ABOVE') ? 'selected' : '' %>>
+                      ⚡ RSI (14) Overbought (>= X)
+                    </option>
+                    <option value="RSI_BELOW" <%= (editAlert && editAlert.condition_type === 'RSI_BELOW') ? 'selected' : '' %>>
+                      ⚡ RSI (14) Oversold (<= X)
+                    </option>
+                    <option value="SMA_GOLDEN_CROSS" <%= (editAlert && editAlert.condition_type === 'SMA_GOLDEN_CROSS') ? 'selected' : '' %>>
+                      ✨ SMA 50/200 Golden Cross (Bullish)
+                    </option>
+                    <option value="SMA_DEATH_CROSS" <%= (editAlert && editAlert.condition_type === 'SMA_DEATH_CROSS') ? 'selected' : '' %>>
+                      💀 SMA 50/200 Death Cross (Bearish)
+                    </option>
+                    <option value="VOLUME_SPIKE" <%= (editAlert && editAlert.condition_type === 'VOLUME_SPIKE') ? 'selected' : '' %>>
+                      📊 Volume Spike (>= N× 20d avg)
+                    </option>
+                  </optgroup>
                 </select>
               </div>
 
@@ -228,6 +245,31 @@
 
                 <button type="submit" class="btn btn-outline-primary btn-sm">Filter</button>
                 <a href="/" class="btn btn-outline-secondary btn-sm">Reset</a>
+
+                <!-- Data Export Dropdown (CSV / JSON) (Phase 8+ 3.8) -->
+                <div class="dropdown">
+                  <button class="btn btn-outline-success btn-sm dropdown-toggle d-flex align-items-center gap-1" type="button" id="exportMenuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span>📥</span> Export
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="exportMenuDropdown">
+                    <li>
+                      <a class="dropdown-item d-flex align-items-center gap-2" href="/api/alerts.csv<%= selectedStatus ? '?status=' + selectedStatus : '' %>">
+                        <span>📊</span> Download CSV (.csv)
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item d-flex align-items-center gap-2" href="/api/alerts.json<%= selectedStatus ? '?status=' + selectedStatus : '' %>" target="_blank">
+                        <span>📦</span> View JSON (.json)
+                      </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                      <a class="dropdown-item d-flex align-items-center gap-2 text-primary" href="/api/docs" target="_blank">
+                        <span>📖</span> REST API Docs
+                      </a>
+                    </li>
+                  </ul>
+                </div>
               </form>
             </div>
           </div>
@@ -257,7 +299,7 @@
                   </tr>
                 <% } else { %>
                   <% for (let alert of alerts) { %>
-                    <tr class="<%= alert.is_triggered ? 'table-danger-subtle' : '' %>">
+                    <tr class="<%= alert.is_triggered ? 'table-danger-subtle' : '' %>" data-alert-id="<%= alert.id %>">
                       <td class="ps-3 fw-bold text-secondary">#<%= alert.id %></td>
                       <td>
                         <span class="fw-semibold"><%= alert.username %></span>
@@ -289,6 +331,26 @@
                           <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
                             🛡️ Trailing Stop
                           </span>
+                        <% } else if (alert.condition_type === 'RSI_ABOVE') { %>
+                          <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                            ⚡ RSI >= <%= Number(alert.target_price).toFixed(0) %>
+                          </span>
+                        <% } else if (alert.condition_type === 'RSI_BELOW') { %>
+                          <span class="badge bg-success-subtle text-success border border-success-subtle">
+                            ⚡ RSI <= <%= Number(alert.target_price).toFixed(0) %>
+                          </span>
+                        <% } else if (alert.condition_type === 'SMA_GOLDEN_CROSS') { %>
+                          <span class="badge bg-success-subtle text-success border border-success-subtle">
+                            ✨ SMA Golden Cross
+                          </span>
+                        <% } else if (alert.condition_type === 'SMA_DEATH_CROSS') { %>
+                          <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                            💀 SMA Death Cross
+                          </span>
+                        <% } else if (alert.condition_type === 'VOLUME_SPIKE') { %>
+                          <span class="badge bg-info-subtle text-info border border-info-subtle">
+                            📊 Vol Spike >= <%= Number(alert.target_price).toFixed(1) %>x
+                          </span>
                         <% } else { %>
                           <span class="badge bg-secondary-subtle text-secondary border">
                             <%= alert.condition_type %>
@@ -301,6 +363,12 @@
                           <% if (alert.condition_type === 'TRAILING_STOP' && alert.peak_price) { %>
                             <small class="text-secondary d-block" style="font-size: 0.68rem;">Peak: $<%= Number(alert.peak_price).toLocaleString() %></small>
                           <% } %>
+                        <% } else if (alert.condition_type.startsWith('RSI_')) { %>
+                          RSI <%= Number(alert.target_price).toFixed(0) %>
+                        <% } else if (alert.condition_type === 'VOLUME_SPIKE') { %>
+                          <%= Number(alert.target_price).toFixed(1) %>× Avg
+                        <% } else if (alert.condition_type.startsWith('SMA_')) { %>
+                          SMA 50/200 Cross
                         <% } else { %>
                           $<%= Number(alert.target_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
                         <% } %>
@@ -318,12 +386,12 @@
                       </td>
                       <td>
                         <% if (alert.is_triggered) { %>
-                          <span class="badge badge-triggered px-2 py-1">🔴 TRIGGERED</span>
+                          <span class="badge badge-triggered alert-status-badge px-2 py-1">🔴 TRIGGERED</span>
                           <% if (alert.triggered_at) { %>
                             <div class="text-muted" style="font-size: 10px;"><%= new Date(alert.triggered_at).toLocaleTimeString() %></div>
                           <% } %>
                         <% } else { %>
-                          <span class="badge badge-active px-2 py-1">🟢 ACTIVE</span>
+                          <span class="badge badge-active alert-status-badge px-2 py-1">🟢 ACTIVE</span>
                         <% } %>
                       </td>
                       <td class="text-end pe-3">
@@ -439,6 +507,8 @@
   <script src="https://cdn.jsdelivr.net/npm/apexcharts@8.8.1/dist/apexcharts.min.js"></script>
   <!-- Client-Side Chart Script -->
   <script src="/js/chart.js"></script>
+  <!-- Real-Time SSE Dashboard Controller (Phase 8+ 3.7) -->
+  <script src="/js/realtime.js"></script>
 
   <!-- SweetAlert2 11 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -454,6 +524,112 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
+  </script>
+
+  <!-- Refresh D1 Progress Popup Controller -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const refreshForm = document.getElementById('refreshD1Form');
+      const btnRefresh = document.getElementById('btnRefreshD1');
+      if (!refreshForm || !btnRefresh) return;
+
+      refreshForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+        // Display animated progress popup with SweetAlert2
+        Swal.fire({
+          title: 'Syncing Market Data...',
+          html: `
+            <div class="p-3 text-start">
+              <div class="mb-3 d-flex align-items-center justify-content-between">
+                <span class="small fw-semibold text-body" id="syncStatusText">Connecting to exchange price feeds...</span>
+                <span class="badge bg-warning text-dark" id="syncStageBadge">Syncing</span>
+              </div>
+              <div class="progress mb-3" style="height: 10px;">
+                <div id="syncProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" role="progressbar" style="width: 25%;"></div>
+              </div>
+              <div class="small text-muted" id="syncDetails">
+                • Probing CCXT exchanges (OKX, Binance)<br>
+                • Populating multi-timeframe candles (1h, 4h, 1d, 1w)<br>
+                • Evaluating active price & technical alerts
+              </div>
+            </div>
+          `,
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+          showConfirmButton: false,
+          background: isDark ? '#1e293b' : '#ffffff',
+          color: isDark ? '#f8fafc' : '#1e293b',
+          didOpen: () => {
+            const pBar = document.getElementById('syncProgressBar');
+            const pText = document.getElementById('syncStatusText');
+            // Progress animation stages
+            setTimeout(() => {
+              if (pBar) pBar.style.width = '60%';
+              if (pText) pText.textContent = 'Saving candlestick series & computing technical indicators...';
+            }, 600);
+            setTimeout(() => {
+              if (pBar) pBar.style.width = '85%';
+              if (pText) pText.textContent = 'Evaluating trigger thresholds & audit trail...';
+            }, 1200);
+          }
+        });
+
+        try {
+          const resp = await fetch('/refresh', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || 'Server error occurred during refresh');
+          }
+
+          const data = await resp.json();
+          const pBar = document.getElementById('syncProgressBar');
+          const pText = document.getElementById('syncStatusText');
+          const pBadge = document.getElementById('syncStageBadge');
+          if (pBar) {
+            pBar.style.width = '100%';
+            pBar.classList.remove('bg-warning');
+            pBar.classList.add('bg-success');
+          }
+          if (pText) pText.textContent = 'Data sync complete!';
+          if (pBadge) {
+            pBadge.className = 'badge bg-success text-light';
+            pBadge.textContent = 'Done';
+          }
+
+          setTimeout(() => {
+            Swal.fire({
+              icon: 'success',
+              title: 'Market Data Refreshed',
+              text: 'Multi-timeframe candlestick data and alert triggers updated successfully.',
+              timer: 1200,
+              showConfirmButton: false,
+              background: isDark ? '#1e293b' : '#ffffff',
+              color: isDark ? '#f8fafc' : '#1e293b',
+            }).then(() => {
+              window.location.reload();
+            });
+          }, 400);
+        } catch (err) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Refresh Failed',
+            text: err.message,
+            confirmButtonColor: '#0d6efd',
+            background: isDark ? '#1e293b' : '#ffffff',
+            color: isDark ? '#f8fafc' : '#1e293b',
+          });
+        }
+      });
+    });
   </script>
 
   <!-- Alert Event Audit Trail SweetAlert2 Controller (Phase 8+ 3.2) -->
@@ -593,6 +769,39 @@
           suffixEl.classList.remove('d-none');
           inputEl.placeholder = 'e.g. 5.0';
           helpEl.textContent = 'Alert tracks highest peak price and triggers when price drops X% from that peak.';
+        } else if (val === 'RSI_ABOVE') {
+          labelEl.textContent = 'RSI (14) Overbought Level (0-100)';
+          prefixEl.classList.add('d-none');
+          suffixEl.classList.add('d-none');
+          inputEl.placeholder = 'e.g. 70';
+          helpEl.textContent = 'Alert triggers when 14-day RSI meets or exceeds this level (e.g. 70).';
+        } else if (val === 'RSI_BELOW') {
+          labelEl.textContent = 'RSI (14) Oversold Level (0-100)';
+          prefixEl.classList.add('d-none');
+          suffixEl.classList.add('d-none');
+          inputEl.placeholder = 'e.g. 30';
+          helpEl.textContent = 'Alert triggers when 14-day RSI drops to or below this level (e.g. 30).';
+        } else if (val === 'SMA_GOLDEN_CROSS') {
+          labelEl.textContent = 'Threshold (1 = Active Trigger)';
+          prefixEl.classList.add('d-none');
+          suffixEl.classList.add('d-none');
+          inputEl.placeholder = '1';
+          if (!inputEl.value) inputEl.value = '1';
+          helpEl.textContent = 'Bullish signal: Triggers when the 50-day SMA crosses above the 200-day SMA.';
+        } else if (val === 'SMA_DEATH_CROSS') {
+          labelEl.textContent = 'Threshold (1 = Active Trigger)';
+          prefixEl.classList.add('d-none');
+          suffixEl.classList.add('d-none');
+          inputEl.placeholder = '1';
+          if (!inputEl.value) inputEl.value = '1';
+          helpEl.textContent = 'Bearish signal: Triggers when the 50-day SMA crosses below the 200-day SMA.';
+        } else if (val === 'VOLUME_SPIKE') {
+          labelEl.textContent = 'Volume Multiplier (× 20-Day Average)';
+          prefixEl.classList.add('d-none');
+          suffixEl.classList.remove('d-none');
+          suffixEl.textContent = '×';
+          inputEl.placeholder = 'e.g. 2.0';
+          helpEl.textContent = 'Triggers when daily trading volume is at least N times the 20-day average volume.';
         }
       };
 
@@ -1777,6 +1986,406 @@
             text: err.message,
             background: dark ? '#1e293b' : '#ffffff',
             color: dark ? '#f8fafc' : '#1e293b',
+          });
+        }
+      });
+    });
+  </script>
+
+  <!-- Personal API Tokens Management Modal Controller (Phase 8+ 3.8) -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btnApiTokens = document.getElementById('btnNavApiTokens');
+      if (!btnApiTokens) return;
+
+      const isDark = () => document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+      const renderTokensTable = (tokens) => {
+        if (!tokens || tokens.length === 0) {
+          return '<p class="text-muted small my-3 text-center">No active API tokens found. Generate one below to automate alerts via REST API!</p>';
+        }
+
+        const rows = tokens.map(t => {
+          const safeId = encodeURIComponent(t.id);
+          const safeName = sanitizeHtml(t.name);
+          const safePrefix = sanitizeHtml(t.prefix);
+          const safeScopes = (t.scopes || []).map(s => `<span class="badge bg-secondary-subtle text-secondary me-1" style="font-size:0.65rem;">${sanitizeHtml(s)}</span>`).join('');
+          const lastUsed = t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleDateString() : '<span class="text-muted">Never</span>';
+          const expires = t.expiresAt ? new Date(t.expiresAt).toLocaleDateString() : '<span class="text-success">Never</span>';
+
+          return `
+            <tr>
+              <td><strong>${safeName}</strong><br><code class="small text-muted">${safePrefix}...</code></td>
+              <td>${safeScopes}</td>
+              <td class="small">${lastUsed}</td>
+              <td class="small">${expires}</td>
+              <td class="text-end">
+                <button type="button" class="btn btn-outline-danger btn-sm btn-revoke-token py-0 px-2" data-id="${safeId}">Revoke</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        return `
+          <div class="table-responsive border rounded mb-3" style="max-height: 220px;">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead class="table-light small">
+                <tr>
+                  <th>Name / Prefix</th>
+                  <th>Scopes</th>
+                  <th>Last Used</th>
+                  <th>Expires</th>
+                  <th class="text-end">Action</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        `;
+      };
+
+      btnApiTokens.addEventListener('click', async () => {
+        const dark = isDark();
+
+        Swal.fire({
+          title: 'Personal API Tokens',
+          html: '<div class="spinner-border text-primary my-3" role="status"></div>',
+          showConfirmButton: false,
+          background: dark ? '#1e293b' : '#ffffff',
+          color: dark ? '#f8fafc' : '#1e293b',
+        });
+
+        try {
+          const res = await fetch('/api/tokens');
+          const data = await res.json();
+          const tokens = data.tokens || [];
+
+          await Swal.fire({
+            title: '🔑 Personal Access Tokens',
+            html: `
+              <div class="text-start">
+                <p class="text-muted small mb-2">Personal access tokens allow external automation, trading bots, and CLI scripts to query your alerts and prices securely via REST API.</p>
+                <div id="tokensListContainer">${renderTokensTable(tokens)}</div>
+                <hr>
+                <h6 class="fw-bold mb-2">Generate New Token</h6>
+                <div class="mb-2">
+                  <label class="form-label small mb-1 fw-semibold">Token Description / Name</label>
+                  <input type="text" id="newTokenName" class="form-control form-control-sm" placeholder="e.g. Python Script / TradingView Webhook" required>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small mb-1 fw-semibold">Scopes / Permissions</label>
+                  <div class="d-flex flex-wrap gap-2 small">
+                    <div class="form-check">
+                      <input class="form-check-input token-scope" type="checkbox" value="read:alerts" id="scReadAlerts" checked>
+                      <label class="form-check-label" for="scReadAlerts">read:alerts</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input token-scope" type="checkbox" value="write:alerts" id="scWriteAlerts">
+                      <label class="form-check-label" for="scWriteAlerts">write:alerts</label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input token-scope" type="checkbox" value="read:markets" id="scReadMarkets" checked>
+                      <label class="form-check-label" for="scReadMarkets">read:markets</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small mb-1 fw-semibold">Expiry Duration</label>
+                  <select id="newTokenExpiry" class="form-select form-select-sm">
+                    <option value="">Never Expires</option>
+                    <option value="30">30 Days</option>
+                    <option value="90" selected>90 Days</option>
+                    <option value="365">1 Year</option>
+                  </select>
+                </div>
+              </div>
+            `,
+            width: '650px',
+            showCancelButton: true,
+            confirmButtonText: 'Generate Token',
+            cancelButtonText: 'Close',
+            confirmButtonColor: '#0d6efd',
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+            didOpen: () => {
+              // Wire up revoke buttons
+              document.querySelectorAll('.btn-revoke-token').forEach(b => {
+                b.addEventListener('click', async (e) => {
+                  const tid = e.target.getAttribute('data-id');
+                  if (!confirm('Are you sure you want to revoke this API token? Any script using it will stop working immediately.')) return;
+                  await fetch(`/api/tokens/${tid}`, { method: 'DELETE' });
+                  btnApiTokens.click(); // Reopen refreshed list
+                });
+              });
+            },
+            preConfirm: async () => {
+              const name = document.getElementById('newTokenName')?.value?.trim();
+              if (!name) {
+                Swal.showValidationMessage('Please enter a descriptive token name');
+                return false;
+              }
+              const scopes = Array.from(document.querySelectorAll('.token-scope:checked')).map(cb => cb.value);
+              const expiresInDays = document.getElementById('newTokenExpiry')?.value || null;
+
+              try {
+                const resp = await fetch('/api/tokens', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name, scopes, expiresInDays }),
+                });
+                if (!resp.ok) {
+                  const errData = await resp.json().catch(() => ({}));
+                  throw new Error(errData.error || 'Failed to create token');
+                }
+                return await resp.json();
+              } catch (err) {
+                Swal.showValidationMessage(err.message);
+                return false;
+              }
+            }
+          }).then(result => {
+            if (result.isConfirmed && result.value && result.value.token) {
+              const created = result.value.token;
+              Swal.fire({
+                icon: 'success',
+                title: 'Token Generated!',
+                html: `
+                  <div class="text-start">
+                    <p class="text-danger small fw-bold">⚠️ Copy this token now. For your security, it will never be displayed again!</p>
+                    <div class="input-group mb-3">
+                      <input type="text" id="generatedTokenText" class="form-control font-monospace small" value="${created.rawToken}" readonly>
+                      <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText('${created.rawToken}'); this.textContent = 'Copied!';">Copy</button>
+                    </div>
+                    <div class="small text-muted">
+                      <strong>Header format:</strong><br>
+                      <code>Authorization: Bearer ${created.rawToken}</code>
+                    </div>
+                  </div>
+                `,
+                confirmButtonText: 'Done',
+                background: dark ? '#1e293b' : '#ffffff',
+                color: dark ? '#f8fafc' : '#1e293b',
+              });
+            }
+          });
+        } catch (fetchErr) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: fetchErr.message || 'Failed to load tokens',
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+          });
+        }
+      });
+    });
+  </script>
+
+  <!-- Deep Coin Analysis & 200W SMA Modal Controller -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const isDark = () => document.documentElement.getAttribute('data-bs-theme') === 'dark';
+
+      // Use event delegation on document so dynamically added cards/buttons also trigger
+      document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.btn-deep-analysis');
+        if (!btn) return;
+
+        e.preventDefault();
+        const assetId = btn.getAttribute('data-asset-id');
+        const symbol = btn.getAttribute('data-asset-symbol') || 'Asset';
+        const dark = isDark();
+
+        if (typeof Swal === 'undefined') {
+          console.error("SweetAlert2 (Swal) is not loaded");
+          alert(`Analyzing ${symbol}... (Swal library not loaded)`);
+          return;
+        }
+
+        Swal.fire({
+          title: `Analyzing ${symbol}...`,
+          html: '<div class="py-3"><div class="spinner-border text-primary" role="status"></div><p class="mt-2 text-muted small">Computing 200-week SMA, technical indicators, and market sentiment...</p></div>',
+          showConfirmButton: false,
+          allowOutsideClick: false,
+          background: dark ? '#1e293b' : '#ffffff',
+          color: dark ? '#f8fafc' : '#1e293b'
+        });
+
+        try {
+          const resp = await fetch(`/api/assets/${assetId}/analysis`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ exchange_id: 1 })
+          });
+
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed to generate analysis');
+          }
+
+          const data = await resp.json();
+          const rep = data.report;
+          const buy = rep.buyOption || {};
+          const sma200w = rep.metrics && rep.metrics.sma200wEval ? rep.metrics.sma200wEval : {};
+          const tech = rep.metrics && rep.metrics.technicals ? rep.metrics.technicals : {};
+          const sent = rep.metrics && rep.metrics.sentiment ? rep.metrics.sentiment : {};
+
+          const signalColor = rep.overallSignal === 'STRONG_BUY' ? '#198754' :
+                              rep.overallSignal === 'BUY' ? '#20c997' :
+                              rep.overallSignal === 'NEUTRAL' ? '#ffc107' :
+                              rep.overallSignal === 'SELL' ? '#fd7e14' : '#dc3545';
+
+          let buyBannerHtml = '';
+          if (buy.eligible) {
+            buyBannerHtml = `
+              <div class="p-3 mb-3 text-start rounded text-white" style="background: linear-gradient(135deg, #198754 0%, #157347 100%);">
+                <div class="d-flex justify-content-between align-items-center">
+                  <strong class="h6 mb-0">${buy.badge}</strong>
+                  <span class="badge bg-light text-dark">ACTIONABLE</span>
+                </div>
+                <p class="small my-2 opacity-90">${buy.rationale}</p>
+                <div class="row g-1 small pt-2 border-top border-white-50">
+                  <div class="col-4"><strong>Entry:</strong> $${Number(buy.targetEntry || 0).toLocaleString()}</div>
+                  <div class="col-4"><strong>Take-Profit:</strong> $${Number(buy.suggestedTakeProfit || 0).toLocaleString()}</div>
+                  <div class="col-4"><strong>Stop-Loss:</strong> $${Number(buy.suggestedStopLoss || 0).toLocaleString()}</div>
+                </div>
+              </div>
+            `;
+          }
+
+          Swal.fire({
+            title: `<div class="d-flex align-items-center justify-content-between w-100 pe-3">
+                      <span>🔍 ${symbol} Deep Analysis</span>
+                      <span class="badge rounded-pill" style="background-color: ${signalColor}; font-size: 0.85rem;">${rep.overallSignal.replace('_', ' ')} (${rep.overallScore}/100)</span>
+                    </div>`,
+            width: '800px',
+            html: `
+              <div class="text-start" style="font-size: 0.9rem;">
+                ${buyBannerHtml}
+
+                <!-- Key Metrics Row -->
+                <div class="row g-2 text-center mb-3">
+                  <div class="col-3">
+                    <div class="p-2 border rounded ${dark ? 'bg-dark' : 'bg-light'}">
+                      <small class="text-muted d-block">Price</small>
+                      <strong class="text-body">$${Number(rep.currentPrice || 0).toLocaleString()}</strong>
+                    </div>
+                  </div>
+                  <div class="col-3">
+                    <div class="p-2 border rounded ${dark ? 'bg-dark' : 'bg-light'}">
+                      <small class="text-muted d-block">Risk</small>
+                      <strong class="text-info">${rep.riskLevel}</strong>
+                    </div>
+                  </div>
+                  <div class="col-3">
+                    <div class="p-2 border rounded ${dark ? 'bg-dark' : 'bg-light'}">
+                      <small class="text-muted d-block">Technicals</small>
+                      <strong class="text-primary">${rep.technicalScore}/100</strong>
+                    </div>
+                  </div>
+                  <div class="col-3">
+                    <div class="p-2 border rounded ${dark ? 'bg-dark' : 'bg-light'}">
+                      <small class="text-muted d-block">Sentiment</small>
+                      <strong class="text-warning">${rep.sentimentScore}/100</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Executive Summary -->
+                <div class="p-2 mb-3 border rounded ${dark ? 'bg-dark' : 'bg-light'}">
+                  <strong class="text-primary d-block mb-1">Executive Summary:</strong>
+                  <div class="small" style="white-space: pre-line;">${rep.summaryText}</div>
+                </div>
+
+                <!-- Detail Table -->
+                <div class="table-responsive small">
+                  <table class="table table-sm ${dark ? 'table-dark' : ''}">
+                    <tbody>
+                      <tr>
+                        <td><strong>200-Week SMA</strong> (Macro Floor)</td>
+                        <td class="text-end fw-bold">
+                          ${sma200w.sma200w 
+                            ? '$' + Number(sma200w.sma200w).toLocaleString() + ' (' + (sma200w.distancePct > 0 ? '+' : '') + sma200w.distancePct + '%)' 
+                            : `<span class="badge bg-secondary-subtle text-secondary" title="Requires at least 200 weekly candles">${sma200w.reason || 'Insufficient data (<200w)'}</span>`}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td><strong>50-Day / 200-Day SMA</strong></td>
+                        <td class="text-end">
+                          ${tech.sma50 ? '$' + Number(Number(tech.sma50).toFixed(2)).toLocaleString() : '<span class="badge bg-secondary-subtle text-secondary">&lt;50d</span>'}
+                          &nbsp;/&nbsp;
+                          ${tech.sma200 ? '$' + Number(Number(tech.sma200).toFixed(2)).toLocaleString() : `<span class="badge bg-secondary-subtle text-secondary" title="Requires at least 200 daily candles">${(tech.reasons && tech.reasons.sma200d) || 'Insufficient data (<200d)'}</span>`}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td><strong>RSI (14)</strong> / <strong>MACD</strong></td>
+                        <td class="text-end">
+                          RSI: <strong>${tech.rsi14 !== null ? tech.rsi14 : '<span class="text-muted">&lt;15d</span>'}</strong> | MACD: <strong>${tech.macd ? tech.macd.histogram : '<span class="text-muted">&lt;35d</span>'}</strong>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td><strong>Bollinger Bands</strong> (Support / Resistance)</td>
+                        <td class="text-end">
+                          $${rep.supportPrice ? Number(rep.supportPrice).toLocaleString() : 'N/A'} &rarr; $${rep.resistancePrice ? Number(rep.resistancePrice).toLocaleString() : 'N/A'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td><strong>Fear & Greed Index</strong></td>
+                        <td class="text-end">
+                          ${sent.fearAndGreed ? sent.fearAndGreed.value + ' (' + sent.fearAndGreed.classification + ')' : '<span class="text-muted">Unavailable</span>'}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                  <div class="d-flex gap-2">
+                    <a href="/reports/${rep.id}/print" target="_blank" class="btn btn-sm btn-outline-secondary">
+                      🖨️ Printable PDF View
+                    </a>
+                    <a href="/api/reports/${rep.id}.json" target="_blank" class="btn btn-sm btn-outline-secondary">
+                      📥 JSON Export
+                    </a>
+                  </div>
+                  ${sma200w.sma200w ? `
+                    <button type="button" class="btn btn-sm btn-success" id="btnCreateBuyAlert200W">
+                      🔔 Buy Alert at 200W SMA ($${Number(sma200w.sma200w).toLocaleString()})
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            `,
+            showConfirmButton: false,
+            showCloseButton: true,
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b',
+            didOpen: () => {
+              const btnAlert = document.getElementById('btnCreateBuyAlert200W');
+              if (btnAlert && sma200w.sma200w) {
+                btnAlert.addEventListener('click', () => {
+                  Swal.close();
+                  // Pre-fill create alert form
+                  const assetSelect = document.getElementById('asset_id');
+                  const targetInput = document.getElementById('target_price');
+                  const condSelect = document.getElementById('condition_type');
+                  if (assetSelect) assetSelect.value = assetId;
+                  if (targetInput) targetInput.value = sma200w.sma200w;
+                  if (condSelect) condSelect.value = 'BELOW';
+                  targetInput.scrollIntoView({ behavior: 'smooth' });
+                  targetInput.focus();
+                });
+              }
+            }
+          });
+        } catch (err) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Analysis Error',
+            text: err.message || 'Failed to complete analysis',
+            background: dark ? '#1e293b' : '#ffffff',
+            color: dark ? '#f8fafc' : '#1e293b'
           });
         }
       });

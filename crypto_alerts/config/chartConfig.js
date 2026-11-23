@@ -81,9 +81,43 @@ function isTimeframeSupported(days) {
   return supported.some((item) => item.days === days);
 }
 
+/**
+ * Supported candle timeframes for charting and intraday alerts (Phase 8+ 3.6).
+ * @type {Array<string>}
+ */
+const SUPPORTED_CANDLE_TIMEFRAMES = ["1h", "4h", "1d", "1w"];
+const DEFAULT_CANDLE_TIMEFRAME = "1d";
+
+/**
+ * Validates and normalizes a candle timeframe (e.g. '1h', '4h', '1d', '1w').
+ *
+ * @param {string} tf
+ * @returns {string} Normalized timeframe or default ('1d').
+ */
+function normalizeTimeframe(tf) {
+  if (!tf || typeof tf !== "string") return DEFAULT_CANDLE_TIMEFRAME;
+  const lower = tf.trim().toLowerCase();
+  return SUPPORTED_CANDLE_TIMEFRAMES.includes(lower) ? lower : DEFAULT_CANDLE_TIMEFRAME;
+}
+
+/**
+ * Checks if a candle timeframe is valid.
+ *
+ * @param {string} tf
+ * @returns {boolean}
+ */
+function isCandleTimeframeValid(tf) {
+  if (!tf || typeof tf !== "string") return false;
+  return SUPPORTED_CANDLE_TIMEFRAMES.includes(tf.trim().toLowerCase());
+}
+
 module.exports = {
   parseTimeframeToken,
   getSupportedTimeframes,
   getDefaultTimeframeDays,
   isTimeframeSupported,
+  SUPPORTED_CANDLE_TIMEFRAMES,
+  DEFAULT_CANDLE_TIMEFRAME,
+  normalizeTimeframe,
+  isCandleTimeframeValid,
 };

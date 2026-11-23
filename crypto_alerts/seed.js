@@ -148,7 +148,7 @@ async function seedDatabase() {
     });
     console.log("Seeded notification_log table.");
 
-    // 5. Seed Baseline Historical OHLCV Candles (180 days for BTC, ETH, SOL on OKX & Binance)
+    // 5. Seed Baseline Historical OHLCV Candles for all timeframes (1d, 4h, 1h, 1w)
     const candleRows = [];
     const basePrices = {
       1: 88500, // BTC/USDT
@@ -156,16 +156,16 @@ async function seedDatabase() {
       3: 185,   // SOL/USDT
     };
 
-    // Generate 180 daily candles ending today to support 7D, 30D, and 180D views
     const now = new Date();
-    const totalDaysToSeed = 180;
+
+    // 5a. Seed 250 Daily ('1d') candles (to satisfy 200-Day SMA requirement)
+    const totalDaysToSeed = 250;
     for (let dayOffset = totalDaysToSeed - 1; dayOffset >= 0; dayOffset--) {
       const d = new Date(now.getTime() - dayOffset * 24 * 60 * 60 * 1000);
       const dateStr = d.toISOString().slice(0, 10);
 
       for (const assetId of [1, 2, 3]) {
         const base = basePrices[assetId];
-        // Slight simulated price variation over time
         const wave = Math.sin((totalDaysToSeed - dayOffset) * 0.15) * (base * 0.08);
         const open = base + wave;
         const high = open * 1.025;
@@ -173,14 +173,84 @@ async function seedDatabase() {
         const close = dayOffset === 0 ? base : (open + high + low) / 3;
         const volume = (base * 12.5).toFixed(2);
 
-        // Seed for OKX (exchange_id = 1) and Binance (exchange_id = 2)
-        candleRows.push([assetId, 1, dateStr, open.toFixed(4), high.toFixed(4), low.toFixed(4), close.toFixed(4), volume]);
-        candleRows.push([assetId, 2, dateStr, (open * 1.0008).toFixed(4), (high * 1.001).toFixed(4), (low * 0.9995).toFixed(4), (close * 1.0005).toFixed(4), (volume * 1.3).toFixed(2)]);
+        const candleDateTime = dateStr + " 00:00:00";
+        candleRows.push([assetId, 1, "1d", candleDateTime, open.toFixed(4), high.toFixed(4), low.toFixed(4), close.toFixed(4), volume]);
+        candleRows.push([assetId, 2, "1d", candleDateTime, (open * 1.0008).toFixed(4), (high * 1.001).toFixed(4), (low * 0.9995).toFixed(4), (close * 1.0005).toFixed(4), (volume * 1.3).toFixed(2)]);
+      }
+    }
+
+    // 5b. Seed 4-hour ('4h') candles (last 30 days = 180 bars)
+    const total4hBars = 180;
+    for (let bar = total4hBars - 1; bar >= 0; bar--) {
+      const d = new Date(now.getTime() - bar * 4 * 60 * 60 * 1000);
+      const candleDateTime = d.toISOString().slice(0, 19).replace("T", " ");
+
+      for (const assetId of [1, 2, 3]) {
+        const base = basePrices[assetId];
+        const wave = Math.sin((total4hBars - bar) * 0.1) * (base * 0.04);
+        const open = base + wave;
+        const high = open * 1.015;
+        const low = open * 0.985;
+        const close = bar === 0 ? base : (open + high + low) / 3;
+        const volume = (base * 2.1).toFixed(2);
+
+        candleRows.push([assetId, 1, "4h", candleDateTime, open.toFixed(4), high.toFixed(4), low.toFixed(4), close.toFixed(4), volume]);
+        candleRows.push([assetId, 2, "4h", candleDateTime, (open * 1.0005).toFixed(4), (high * 1.0008).toFixed(4), (low * 0.9992).toFixed(4), (close * 1.0002).toFixed(4), (volume * 1.2).toFixed(2)]);
+      }
+    }
+
+    // 5c. Seed 1-hour ('1h') candles (last 7 days = 168 bars)
+    const total1hBars = 168;
+    for (let bar = total1hBars - 1; bar >= 0; bar--) {
+      const d = new Date(now.getTime() - bar * 60 * 60 * 1000);
+      const candleDateTime = d.toISOString().slice(0, 19).replace("T", " ");
+
+      for (const assetId of [1, 2, 3]) {
+        const base = basePrices[assetId];
+        const wave = Math.sin((total1hBars - bar) * 0.08) * (base * 0.02);
+        const open = base + wave;
+        const high = open * 1.008;
+        const low = open * 0.992;
+        const close = bar === 0 ? base : (open + high + low) / 3;
+        const volume = (base * 0.55).toFixed(2);
+
+        candleRows.push([assetId, 1, "1h", candleDateTime, open.toFixed(4), high.toFixed(4), low.toFixed(4), close.toFixed(4), volume]);
+        candleRows.push([assetId, 2, "1h", candleDateTime, (open * 1.0002).toFixed(4), (high * 1.0004).toFixed(4), (low * 0.9997).toFixed(4), (close * 1.0001).toFixed(4), (volume * 1.15).toFixed(2)]);
+      }
+    }
+
+    // 5d. Seed 1-week ('1w') candles (208 weeks = ~4 years for 200W SMA calculation)
+    // Standardize to Monday 00:00:00 UTC to align with ISO weeks and exchange standards
+    const total1wBars = 208;
+    // Find the Monday of current week
+    const currentMonday = new Date(now.getTime());
+    const dayOfWeek = currentMonday.getUTCDay(); // 0 is Sunday, 1 is Monday...
+    const diffToMonday = (dayOfWeek + 6) % 7;
+    currentMonday.setUTCDate(currentMonday.getUTCDate() - diffToMonday);
+    currentMonday.setUTCHours(0, 0, 0, 0);
+
+    for (let bar = total1wBars - 1; bar >= 0; bar--) {
+      const d = new Date(currentMonday.getTime() - bar * 7 * 24 * 60 * 60 * 1000);
+      const candleDateTime = d.toISOString().slice(0, 10) + " 00:00:00";
+
+      for (const assetId of [1, 2, 3]) {
+        const base = basePrices[assetId];
+        // Long-term macro growth curve with market cycle waves
+        const macroFactor = 0.45 + (0.55 * (total1wBars - bar) / total1wBars);
+        const wave = Math.sin((total1wBars - bar) * 0.12) * (base * 0.15);
+        const open = (base * macroFactor) + wave;
+        const high = open * 1.05;
+        const low = open * 0.95;
+        const close = bar === 0 ? base : (open + high + low) / 3;
+        const volume = (base * 85.0).toFixed(2);
+
+        candleRows.push([assetId, 1, "1w", candleDateTime, open.toFixed(4), high.toFixed(4), low.toFixed(4), close.toFixed(4), volume]);
+        candleRows.push([assetId, 2, "1w", candleDateTime, (open * 1.001).toFixed(4), (high * 1.002).toFixed(4), (low * 0.998).toFixed(4), (close * 1.001).toFixed(4), (volume * 1.25).toFixed(2)]);
       }
     }
 
     const ohlcvSql = `
-      INSERT INTO asset_ohlcv (asset_id, exchange_id, candle_time, open_price, high_price, low_price, close_price, volume)
+      INSERT INTO asset_ohlcv (asset_id, exchange_id, timeframe, candle_time, open_price, high_price, low_price, close_price, volume)
       VALUES ?
       ON DUPLICATE KEY UPDATE
         open_price = VALUES(open_price),

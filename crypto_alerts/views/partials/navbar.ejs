@@ -69,6 +69,16 @@
                   <span>🔔</span> Alert Preferences
                 </button>
               </li>
+              <li>
+                <button type="button" id="btnNavApiTokens" class="dropdown-item d-flex align-items-center gap-2">
+                  <span>🔑</span> Personal API Tokens
+                </button>
+              </li>
+              <li>
+                <a href="/api/docs" target="_blank" class="dropdown-item d-flex align-items-center gap-2">
+                  <span>📖</span> REST API Docs (Swagger)
+                </a>
+              </li>
               <li><hr class="dropdown-divider"></li>
               <li>
                 <form action="/logout" method="POST" class="m-0">
@@ -81,13 +91,31 @@
           </div>
         <% } %>
 
-        <!-- Trader Actions: Refresh, Watchlist & Health -->
-        <div class="d-flex flex-column flex-lg-row gap-2">
-          <!-- Instant Refresh D1 Prices Button -->
-          <form action="/refresh" method="POST" class="m-0">
-            <button type="submit" class="btn btn-warning btn-sm fw-semibold w-100 d-flex align-items-center justify-content-center gap-1 shadow-sm">
-              <span>🔄</span>
-              <span>Refresh D1</span>
+        <!-- Trader Actions: Real-Time Sync Toggle, Refresh, Watchlist & Health -->
+        <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+          <!-- Real-Time SSE Stream Toggle (On/Off) & Live Status Badge -->
+          <div class="d-flex align-items-center gap-2">
+            <span id="realtimeStatusBadge" class="badge bg-dark border border-secondary text-secondary px-2 py-1 d-inline-flex align-items-center shadow-sm" style="font-size: 0.75rem;">
+              <span id="realtimeStatusDot" class="badge bg-secondary rounded-circle p-1 me-1"></span>
+              <span id="realtimeStatusText">Live Sync: Connecting...</span>
+            </span>
+            <button
+              id="toggleRealtimeSync"
+              type="button"
+              class="btn btn-outline-success btn-sm py-1 px-2 fw-semibold shadow-sm d-flex align-items-center gap-1"
+              title="Toggle Real-Time Updates On/Off"
+              aria-pressed="true"
+            >
+              <span>⚡</span>
+              <span class="d-none d-xl-inline">Live Sync</span>
+            </button>
+          </div>
+
+          <!-- Instant Refresh D1 Prices Button with Progress Modal -->
+          <form id="refreshD1Form" action="/refresh" method="POST" class="m-0">
+            <button id="btnRefreshD1" type="submit" class="btn btn-warning btn-sm fw-semibold w-100 d-flex align-items-center justify-content-center gap-1 shadow-sm">
+              <span id="refreshIcon">🔄</span>
+              <span id="refreshText">Refresh D1</span>
             </button>
           </form>
 

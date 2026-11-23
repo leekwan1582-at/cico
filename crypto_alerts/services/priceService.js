@@ -10,6 +10,9 @@ const path = require("path");
 const ccxt = require("ccxt");
 const pool = require("../config/db");
 const notificationService = require("./notificationService");
+const indicatorService = require("./indicatorService");
+const chartConfig = require("../config/chartConfig");
+const sseService = require("./sseService");
 
 /**
  * In-memory markets cache with TTL to eliminate redundant loadMarkets() calls (C6).
@@ -139,10 +142,29 @@ async function refreshAllPrices() {
       if (ex.ccxt_id === "local_mock") continue;
 
       // 1. Attempt to fetch full OHLCV daily candle history from CCXT (up to 180 days for full timeframe coverage)
-      const ohlcvCandles = await fetchOHLCVFromExchange(ex.ccxt_id, asset.symbol, 180);
+      const ohlcvCandles = await fetchOHLCVFromExchange(ex.ccxt_id, asset.symbol, 180, "1d");
       if (ohlcvCandles && ohlcvCandles.length > 0) {
         // Save the entire daily candlestick series to asset_ohlcv table
-        await saveCandlesToDatabase(asset.id, ex.id, ohlcvCandles);
+        await saveCandlesToDatabase(asset.id, ex.id, ohlcvCandles, "1d");
+
+        // Also fetch and save multi-timeframe candles (4h, 1h, 1w) so charts show real persisted data
+        try {
+          const ohlcv4h = await fetchOHLCVFromExchange(ex.ccxt_id, asset.symbol, 30, "4h");
+          if (ohlcv4h && ohlcv4h.length > 0) {
+            await saveCandlesToDatabase(asset.id, ex.id, ohlcv4h, "4h");
+          }
+          const ohlcv1h = await fetchOHLCVFromExchange(ex.ccxt_id, asset.symbol, 7, "1h");
+          if (ohlcv1h && ohlcv1h.length > 0) {
+            await saveCandlesToDatabase(asset.id, ex.id, ohlcv1h, "1h");
+          }
+          // Fetch up to 1450 days (208 weeks = ~4 years) for 200W SMA calculation
+          const ohlcv1w = await fetchOHLCVFromExchange(ex.ccxt_id, asset.symbol, 1450, "1w");
+          if (ohlcv1w && ohlcv1w.length > 0) {
+            await saveCandlesToDatabase(asset.id, ex.id, ohlcv1w, "1w");
+          }
+        } catch (tfErr) {
+          // Multi-timeframe fetching non-blocking
+        }
 
         // Extract latest candle close price
         const latestCandle = ohlcvCandles[ohlcvCandles.length - 1];
@@ -167,6 +189,48 @@ async function refreshAllPrices() {
     // Fall back to offline snapshot if all live calls failed
     if (resolvedPrice === null) {
       resolvedPrice = fallbackPrices[asset.symbol] ?? 0.0;
+
+      // Seed synthetic multi-timeframe candles into asset_ohlcv when in offline/fallback mode
+      // so chart queries for '1h', '4h', '1d', '1w' have persistent records matching the asset price
+      if (resolvedPrice > 0) {
+        for (const ex of exchanges) {
+          if (ex.ccxt_id === "local_mock") continue;
+          try {
+            // Check if any candles exist for each timeframe for this asset & exchange, and backfill missing ones
+            const [existingTfs] = await pool.query(
+              "SELECT DISTINCT timeframe FROM asset_ohlcv WHERE asset_id = ? AND exchange_id = ?",
+              [asset.id, ex.id]
+            );
+            const present = new Set(existingTfs.map((r) => r.timeframe));
+
+            if (!present.has("1h")) {
+              const fallback1h = generateFallbackCandles(resolvedPrice, 7, "1h");
+              const tuples1h = fallback1h.map((c) => [new Date(c.x).getTime(), c.y[0], c.y[1], c.y[2], c.y[3], 1000]);
+              await saveCandlesToDatabase(asset.id, ex.id, tuples1h, "1h");
+            }
+
+            if (!present.has("4h")) {
+              const fallback4h = generateFallbackCandles(resolvedPrice, 30, "4h");
+              const tuples4h = fallback4h.map((c) => [new Date(c.x).getTime(), c.y[0], c.y[1], c.y[2], c.y[3], 2500]);
+              await saveCandlesToDatabase(asset.id, ex.id, tuples4h, "4h");
+            }
+
+            if (!present.has("1d")) {
+              const fallback1d = generateFallbackCandles(resolvedPrice, 180, "1d");
+              const tuples1d = fallback1d.map((c) => [new Date(c.x).getTime(), c.y[0], c.y[1], c.y[2], c.y[3], 10000]);
+              await saveCandlesToDatabase(asset.id, ex.id, tuples1d, "1d");
+            }
+
+            if (!present.has("1w")) {
+              const fallback1w = generateFallbackCandles(resolvedPrice, 1450, "1w");
+              const tuples1w = fallback1w.map((c) => [new Date(c.x).getTime(), c.y[0], c.y[1], c.y[2], c.y[3], 50000]);
+              await saveCandlesToDatabase(asset.id, ex.id, tuples1w, "1w");
+            }
+          } catch (syncErr) {
+            // Non-blocking fallback seed
+          }
+        }
+      }
     }
 
     // 3. Compute 24h percentage return using previous day close from asset_ohlcv or fallback
@@ -208,7 +272,9 @@ async function refreshAllPrices() {
       symbol: asset.symbol,
       price: resolvedPrice,
       change24hPct,
+      change_24h_pct: change24hPct,
       source: sourceForAsset,
+      last_updated: new Date().toISOString(),
     });
   }
 
@@ -302,6 +368,120 @@ async function refreshAllPrices() {
     console.warn("Notice: Transition query error or column pending migration:", err.message);
   }
 
+  // 5b. Evaluate Technical Indicator Alerts (Phase 8+ 3.5: RSI_14, SMA_CROSS, VOLUME_SPIKE)
+  try {
+    const [indicatorAlerts] = await pool.query(`
+      SELECT 
+        pa.id,
+        pa.user_id,
+        u.username,
+        u.email,
+        pa.asset_id,
+        a.symbol AS asset_symbol,
+        a.name AS asset_name,
+        COALESCE(ex_close.close_price, a.last_d1_close) AS last_d1_close,
+        a.change_24h_pct,
+        pa.exchange_id,
+        e.display_name AS exchange_name,
+        pa.target_price,
+        pa.reference_baseline,
+        pa.peak_price,
+        pa.condition_type,
+        pa.condition_metric,
+        pa.notification_channel,
+        pa.recipient_target
+      FROM price_alerts pa
+      JOIN users u ON pa.user_id = u.id
+      JOIN assets a ON pa.asset_id = a.id
+      JOIN exchanges e ON pa.exchange_id = e.id
+      LEFT JOIN (
+        SELECT o1.asset_id, o1.exchange_id, o1.close_price
+        FROM asset_ohlcv o1
+        INNER JOIN (
+          SELECT asset_id, exchange_id, MAX(candle_time) AS max_time
+          FROM asset_ohlcv
+          GROUP BY asset_id, exchange_id
+        ) o2 ON o1.asset_id = o2.asset_id AND o1.exchange_id = o2.exchange_id AND o1.candle_time = o2.max_time
+      ) ex_close ON pa.asset_id = ex_close.asset_id AND pa.exchange_id = ex_close.exchange_id
+      WHERE pa.is_triggered = FALSE
+        AND pa.condition_metric IN ('RSI_14', 'SMA_CROSS', 'VOLUME_SPIKE')
+    `);
+
+    if (indicatorAlerts && indicatorAlerts.length > 0) {
+      // Group alerts by (asset_id, exchange_id) to fetch candle history efficiently
+      const pairMap = new Map();
+      for (const alt of indicatorAlerts) {
+        const key = `${alt.asset_id}_${alt.exchange_id}`;
+        if (!pairMap.has(key)) {
+          pairMap.set(key, { assetId: alt.asset_id, exchangeId: alt.exchange_id, alerts: [] });
+        }
+        pairMap.get(key).alerts.push(alt);
+      }
+
+      for (const { assetId, exchangeId, alerts } of pairMap.values()) {
+        const [candleRows] = await pool.query(
+          `SELECT candle_time, open_price, high_price, low_price, close_price, volume
+           FROM asset_ohlcv
+           WHERE asset_id = ? AND exchange_id = ?
+           ORDER BY candle_time ASC`,
+          [assetId, exchangeId]
+        );
+
+        if (candleRows && candleRows.length > 0) {
+          const indicators = indicatorService.computeIndicatorsFromCandles(candleRows);
+
+          for (const alt of alerts) {
+            let triggered = false;
+            let triggerMetricVal = null;
+            let triggerMsg = "";
+
+            if (alt.condition_metric === "RSI_14") {
+              const rsi = indicators.rsi14;
+              if (rsi !== null) {
+                triggerMetricVal = rsi;
+                if (alt.condition_type === "RSI_ABOVE" || alt.condition_type === "ABOVE") {
+                  triggered = rsi >= alt.target_price;
+                  triggerMsg = `RSI(14) ${rsi.toFixed(2)} crossed above target ${alt.target_price}`;
+                } else if (alt.condition_type === "RSI_BELOW" || alt.condition_type === "BELOW") {
+                  triggered = rsi <= alt.target_price;
+                  triggerMsg = `RSI(14) ${rsi.toFixed(2)} crossed below target ${alt.target_price}`;
+                }
+              }
+            } else if (alt.condition_metric === "SMA_CROSS") {
+              const cross = indicators.smaCross;
+              if (cross.fastSMA !== null && cross.slowSMA !== null) {
+                triggerMetricVal = cross.fastSMA;
+                if (alt.condition_type === "SMA_GOLDEN_CROSS" || alt.condition_type === "ABOVE") {
+                  triggered = cross.isGoldenCross;
+                  triggerMsg = `50/200 SMA Golden Cross detected (SMA50: $${cross.fastSMA.toFixed(2)} >= SMA200: $${cross.slowSMA.toFixed(2)})`;
+                } else if (alt.condition_type === "SMA_DEATH_CROSS" || alt.condition_type === "BELOW") {
+                  triggered = cross.isDeathCross;
+                  triggerMsg = `50/200 SMA Death Cross detected (SMA50: $${cross.fastSMA.toFixed(2)} <= SMA200: $${cross.slowSMA.toFixed(2)})`;
+                }
+              }
+            } else if (alt.condition_metric === "VOLUME_SPIKE") {
+              const spike = indicators.volumeSpike;
+              triggerMetricVal = spike.volumeRatio;
+              const thresholdMultiplier = parseFloat(alt.target_price) || 2.0;
+              if (spike.volumeRatio !== null) {
+                triggered = spike.volumeRatio >= thresholdMultiplier;
+                triggerMsg = `Volume Spike ${spike.volumeRatio}x exceeded 20-day average threshold ${thresholdMultiplier}x`;
+              }
+            }
+
+            if (triggered) {
+              alt._triggerMetricVal = triggerMetricVal;
+              alt._triggerMsg = triggerMsg;
+              newlyTriggeredAlerts.push(alt);
+            }
+          }
+        }
+      }
+    }
+  } catch (indErr) {
+    console.warn("Notice: Indicator alert evaluation skipped:", indErr.message);
+  }
+
   // 6. Update price alert triggers based on latest asset prices and metrics
   // Fix C1: ONE-WAY TRIGGER TRANSITION (FALSE -> TRUE only). Never clears triggered_at or re-arms alerts to FALSE in the engine!
   // Fix C3: Exchange-aware pricing via ex_close subquery
@@ -322,9 +502,9 @@ async function refreshAllPrices() {
       pa.triggered_at = COALESCE(pa.triggered_at, NOW())
     WHERE pa.is_triggered = FALSE
       AND (
-        (pa.condition_type = 'ABOVE' AND COALESCE(ex_close.close_price, a.last_d1_close) >= pa.target_price)
+        (pa.condition_type = 'ABOVE' AND pa.condition_metric = 'PRICE' AND COALESCE(ex_close.close_price, a.last_d1_close) >= pa.target_price)
         OR
-        (pa.condition_type = 'BELOW' AND COALESCE(ex_close.close_price, a.last_d1_close) <= pa.target_price)
+        (pa.condition_type = 'BELOW' AND pa.condition_metric = 'PRICE' AND COALESCE(ex_close.close_price, a.last_d1_close) <= pa.target_price)
         OR
         (pa.condition_type = 'PCT_CHANGE_24H_ABOVE' AND a.change_24h_pct >= pa.target_price)
         OR
@@ -335,6 +515,16 @@ async function refreshAllPrices() {
   `;
   try {
     await pool.query(triggerQuery);
+    // Also mark any newly triggered indicator alerts as TRUE
+    const indicatorTriggeredIds = newlyTriggeredAlerts
+      .filter((a) => ["RSI_14", "SMA_CROSS", "VOLUME_SPIKE"].includes(a.condition_metric))
+      .map((a) => a.id);
+    if (indicatorTriggeredIds.length > 0) {
+      await pool.query(
+        "UPDATE price_alerts SET is_triggered = TRUE, triggered_at = COALESCE(triggered_at, NOW()) WHERE id IN (?)",
+        [indicatorTriggeredIds]
+      );
+    }
   } catch (trigErr) {
     console.warn("Notice: Advanced trigger query fallback:", trigErr.message);
   }
@@ -346,8 +536,8 @@ async function refreshAllPrices() {
         alt.id,
         "TRIGGERED",
         alt.last_d1_close || null,
-        alt.target_price || null,
-        `Condition ${alt.condition_type} met at market price $${Number(alt.last_d1_close).toLocaleString()}`,
+        alt._triggerMetricVal !== undefined ? alt._triggerMetricVal : (alt.target_price || null),
+        alt._triggerMsg || `Condition ${alt.condition_type} met at market price $${Number(alt.last_d1_close).toLocaleString()}`,
       ]);
       await pool.query(
         "INSERT INTO alert_events (alert_id, event_type, price_at_event, metric_value, message) VALUES ?",
@@ -363,11 +553,39 @@ async function refreshAllPrices() {
     notificationService.dispatchNotificationsAsync(newlyTriggeredAlerts);
   }
 
-  // 7. Count currently triggered alerts
-  const [triggeredRows] = await pool.query(
-    "SELECT COUNT(*) AS count FROM price_alerts WHERE is_triggered = TRUE"
-  );
-  const triggeredCount = triggeredRows[0]?.count || 0;
+  // 7. Count currently tracked pairs, active alerts, and triggered alerts
+  let triggeredCount = 0;
+  let activeAlertsCount = 0;
+  try {
+    const [triggeredRows] = await pool.query(
+      "SELECT COUNT(*) AS count FROM price_alerts WHERE is_triggered = TRUE"
+    );
+    triggeredCount = triggeredRows[0]?.count || 0;
+
+    const [activeRows] = await pool.query(
+      "SELECT COUNT(*) AS count FROM price_alerts WHERE is_triggered = FALSE"
+    );
+    activeAlertsCount = activeRows[0]?.count || 0;
+  } catch (countErr) {
+    // Non-blocking
+  }
+
+  // 8. Server-Sent Events (SSE) Real-Time Broadcasts (Phase 8+ 3.7)
+  try {
+    if (updatedAssets.length > 0) {
+      sseService.broadcastPriceUpdate(updatedAssets);
+    }
+    if (newlyTriggeredAlerts.length > 0) {
+      sseService.broadcastAlertTrigger(newlyTriggeredAlerts);
+    }
+    sseService.broadcastKPIUpdate({
+      totalPairs: updatedAssets.length,
+      activeAlerts: activeAlertsCount,
+      triggeredAlerts: triggeredCount,
+    });
+  } catch (sseErr) {
+    console.warn("Notice: SSE real-time broadcast error:", sseErr.message);
+  }
 
   return {
     sourceUsed: activeSourceDisplayName,
@@ -378,15 +596,16 @@ async function refreshAllPrices() {
 }
 
 /**
- * Attempts to fetch daily OHLCV candles using CCXT for an exchange and symbol.
+ * Attempts to fetch OHLCV candles using CCXT for an exchange, symbol, and timeframe (1h, 4h, 1d, 1w).
  *
  * @async
  * @param {string} ccxtId - Unique exchange identifier in CCXT.
  * @param {string} symbol - Unified pair symbol (e.g. 'BTC/USDT').
  * @param {number} [days=30] - Number of days of candles to retrieve.
+ * @param {string} [timeframe='1d'] - Candle timeframe ('1h', '4h', '1d', '1w').
  * @returns {Promise<Array<[number, number, number, number, number, number]>|null>} OHLCV candles or null.
  */
-async function fetchOHLCVFromExchange(ccxtId, symbol, days = 30) {
+async function fetchOHLCVFromExchange(ccxtId, symbol, days = 30, timeframe = "1d") {
   try {
     if (!ccxt[ccxtId]) {
       return null;
@@ -395,42 +614,52 @@ async function fetchOHLCVFromExchange(ccxtId, symbol, days = 30) {
       timeout: 6000,
       enableRateLimit: true,
     });
+    const tf = chartConfig.normalizeTimeframe(timeframe);
     const since = Date.now() - days * 24 * 60 * 60 * 1000;
-    const ohlcv = await exchange.fetchOHLCV(symbol, "1d", since, days);
+    const limit = tf === "1h"
+      ? Math.min(days * 24, 500)
+      : (tf === "4h"
+        ? Math.min(days * 6, 500)
+        : (tf === "1w" ? Math.min(Math.ceil(days / 7), 250) : days));
+    const ohlcv = await exchange.fetchOHLCV(symbol, tf, since, limit);
     if (ohlcv && Array.isArray(ohlcv) && ohlcv.length > 0) {
       return ohlcv;
     }
     return null;
   } catch (err) {
-    console.warn(`CCXT OHLCV error on ${ccxtId} for ${symbol}: ${err.message}`);
+    console.warn(`CCXT OHLCV error on ${ccxtId} for ${symbol} (${timeframe}): ${err.message}`);
     return null;
   }
 }
 
 /**
- * Persists an array of daily OHLCV candles for an asset and exchange into asset_ohlcv.
+ * Persists an array of OHLCV candles for an asset, exchange, and timeframe into asset_ohlcv.
  *
  * @async
  * @param {number} assetId - Asset ID.
  * @param {number} exchangeId - Exchange ID.
  * @param {Array<[number, number, number, number, number, number]>} candles - Raw CCXT candles.
+ * @param {string} [timeframe='1d'] - Candle timeframe ('1h', '4h', '1d', '1w').
  * @returns {Promise<void>}
  */
-async function saveCandlesToDatabase(assetId, exchangeId, candles) {
+async function saveCandlesToDatabase(assetId, exchangeId, candles, timeframe = "1d") {
   if (!candles || candles.length === 0) return;
 
+  const tf = chartConfig.normalizeTimeframe(timeframe);
   const rows = candles.map((c) => {
-    const dateStr = new Date(c[0]).toISOString().slice(0, 10);
+    // Format candle_time as MySQL DATETIME string: YYYY-MM-DD HH:mm:ss
+    const d = new Date(c[0]);
+    const dateStr = d.toISOString().slice(0, 19).replace("T", " ");
     const open = parseFloat(c[1]) || 0;
     const high = parseFloat(c[2]) || open;
     const low = parseFloat(c[3]) || open;
     const close = parseFloat(c[4]) || open;
     const vol = parseFloat(c[5]) || 0;
-    return [assetId, exchangeId, dateStr, open, high, low, close, vol];
+    return [assetId, exchangeId, tf, dateStr, open, high, low, close, vol];
   });
 
   const sql = `
-    INSERT INTO asset_ohlcv (asset_id, exchange_id, candle_time, open_price, high_price, low_price, close_price, volume)
+    INSERT INTO asset_ohlcv (asset_id, exchange_id, timeframe, candle_time, open_price, high_price, low_price, close_price, volume)
     VALUES ?
     ON DUPLICATE KEY UPDATE
       open_price = VALUES(open_price),
@@ -448,22 +677,49 @@ async function saveCandlesToDatabase(assetId, exchangeId, candles) {
 }
 
 /**
- * Generates simulated historical daily candles anchored to a base price.
+ * Generates simulated historical candles anchored to a base price for a given timeframe.
  *
  * @param {number} basePrice - Reference base price.
  * @param {number} [days=30] - Number of days.
+ * @param {string} [timeframe='1d'] - Candle timeframe ('1h', '4h', '1d', '1w').
  * @returns {Array<{ x: string, y: [number, number, number, number] }>}
  */
-function generateFallbackCandles(basePrice, days = 30) {
+function generateFallbackCandles(basePrice, days = 30, timeframe = "1d") {
   const candles = [];
   const now = new Date();
-  for (let offset = days - 1; offset >= 0; offset--) {
-    const d = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000);
-    const dateStr = d.toISOString().slice(0, 10);
-    const wave = Math.sin((days - offset) * 0.4) * (basePrice * 0.04);
-    const open = Number((basePrice + wave).toFixed(2));
-    const high = Number((open * 1.02).toFixed(2));
-    const low = Number((open * 0.98).toFixed(2));
+  const tf = chartConfig.normalizeTimeframe(timeframe);
+
+  let stepMs = 24 * 60 * 60 * 1000;
+  let count = days;
+
+  if (tf === "1h") {
+    stepMs = 60 * 60 * 1000;
+    count = Math.min(days * 24, 168); // up to 168 hourly points
+  } else if (tf === "4h") {
+    stepMs = 4 * 60 * 60 * 1000;
+    count = Math.min(days * 6, 250); // 4-hour points
+  } else if (tf === "1w") {
+    stepMs = 7 * 24 * 60 * 60 * 1000;
+    count = Math.min(Math.max(Math.floor(days / 7), 12), 250);
+    // Align weekly fallback date to Monday 00:00:00 UTC
+    const dayOfWeek = now.getUTCDay();
+    const diffToMonday = (dayOfWeek + 6) % 7;
+    now.setUTCDate(now.getUTCDate() - diffToMonday);
+    now.setUTCHours(0, 0, 0, 0, 0);
+  }
+
+  for (let offset = count - 1; offset >= 0; offset--) {
+    const d = new Date(now.getTime() - offset * stepMs);
+    const dateStr = tf === "1h" || tf === "4h"
+      ? d.toISOString().slice(0, 16).replace("T", " ")
+      : d.toISOString().slice(0, 10);
+    // Realistic trend + noise variation rather than high-frequency oscillation
+    const progress = (count - offset) / count;
+    const trend = Math.sin(progress * Math.PI * 2) * (basePrice * 0.05);
+    const wave = Math.sin((count - offset) * 0.08) * (basePrice * 0.02);
+    const open = Number((basePrice + trend + wave).toFixed(2));
+    const high = Number((open * 1.012).toFixed(2));
+    const low = Number((open * 0.988).toFixed(2));
     const close = offset === 0 ? basePrice : Number(((open + high + low) / 3).toFixed(2));
     candles.push({
       x: dateStr,
@@ -597,12 +853,13 @@ async function seedInitialAssetOHLCV(assetId, symbol, initialClosePrice, dbConne
   let totalSaved = 0;
   for (const [exchangeId, candles] of candlesByExchange.entries()) {
     const rows = candles.map((c) => {
-      const candleDate = new Date(c[0]).toISOString().slice(0, 10);
-      return [assetId, exchangeId, candleDate, c[1], c[2], c[3], c[4], c[5] || 0];
+      const d = new Date(c[0]);
+      const candleDate = d.toISOString().slice(0, 19).replace("T", " ");
+      return [assetId, exchangeId, "1d", candleDate, c[1], c[2], c[3], c[4], c[5] || 0];
     });
 
     const sql = `
-      INSERT INTO asset_ohlcv (asset_id, exchange_id, candle_time, open_price, high_price, low_price, close_price, volume)
+      INSERT INTO asset_ohlcv (asset_id, exchange_id, timeframe, candle_time, open_price, high_price, low_price, close_price, volume)
       VALUES ?
       ON DUPLICATE KEY UPDATE
         open_price = VALUES(open_price),

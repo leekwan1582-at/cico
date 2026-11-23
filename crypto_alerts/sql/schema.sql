@@ -42,8 +42,8 @@ CREATE TABLE price_alerts (
     target_price DECIMAL(18, 8) NOT NULL,
     reference_baseline DECIMAL(18, 8) NULL,   -- Initial entry price for relative metrics
     peak_price DECIMAL(18, 8) NULL,           -- High watermark for trailing stops
-    condition_type VARCHAR(30) NOT NULL,      -- 'ABOVE', 'BELOW', 'PCT_CHANGE_24H_ABOVE', 'PCT_CHANGE_24H_BELOW', 'TRAILING_STOP'
-    condition_metric VARCHAR(20) NOT NULL DEFAULT 'PRICE', -- 'PRICE', 'PCT_CHANGE_24H', 'TRAILING_STOP'
+    condition_type VARCHAR(40) NOT NULL,      -- 'ABOVE', 'BELOW', 'PCT_CHANGE_24H_ABOVE', 'PCT_CHANGE_24H_BELOW', 'TRAILING_STOP', 'RSI_ABOVE', 'RSI_BELOW', 'SMA_GOLDEN_CROSS', 'SMA_DEATH_CROSS', 'VOLUME_SPIKE'
+    condition_metric VARCHAR(30) NOT NULL DEFAULT 'PRICE', -- 'PRICE', 'PCT_CHANGE_24H', 'TRAILING_STOP', 'RSI_14', 'SMA_CROSS', 'VOLUME_SPIKE'
     is_triggered BOOLEAN DEFAULT FALSE,
     notification_channel VARCHAR(20) NOT NULL DEFAULT 'IN_APP', -- 'EMAIL', 'TELEGRAM', 'DISCORD', 'IN_APP'
     recipient_target VARCHAR(255) NULL,       -- Email address, Telegram chat ID, Discord webhook URL, or user handle
@@ -54,12 +54,13 @@ CREATE TABLE price_alerts (
     FOREIGN KEY (exchange_id) REFERENCES exchanges(id) ON DELETE RESTRICT
 );
 
--- Table 5: Asset OHLCV Historical Candles (Partitioned by Asset & Exchange)
+-- Table 5: Asset OHLCV Historical Candles (Partitioned by Asset & Exchange & Timeframe)
 CREATE TABLE IF NOT EXISTS asset_ohlcv (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     asset_id INT UNSIGNED NOT NULL,
     exchange_id INT UNSIGNED NOT NULL,
-    candle_time DATE NOT NULL,
+    timeframe VARCHAR(10) NOT NULL DEFAULT '1d', -- '1h', '4h', '1d', '1w'
+    candle_time DATETIME NOT NULL,
     open_price DECIMAL(18, 8) NOT NULL,
     high_price DECIMAL(18, 8) NOT NULL,
     low_price DECIMAL(18, 8) NOT NULL,
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS asset_ohlcv (
     volume DECIMAL(24, 8) DEFAULT 0.0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_asset_exchange_candle (asset_id, exchange_id, candle_time),
+    UNIQUE KEY uq_asset_exchange_tf_candle (asset_id, exchange_id, timeframe, candle_time),
     FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
     FOREIGN KEY (exchange_id) REFERENCES exchanges(id) ON DELETE CASCADE
 );
@@ -139,3 +140,44 @@ CREATE TABLE IF NOT EXISTS notification_log (
     FOREIGN KEY (alert_id) REFERENCES price_alerts(id) ON DELETE SET NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Table 10: Personal API Tokens (Scoped, revocable tokens for external automation & REST API)
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    token_prefix VARCHAR(16) NOT NULL,
+    token_hash VARCHAR(64) NOT NULL,
+    scopes VARCHAR(255) NOT NULL DEFAULT 'read:alerts',
+    last_used_at DATETIME NULL,
+    expires_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_api_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_api_tokens_hash (token_hash),
+    INDEX idx_api_tokens_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Table 11: Asset Analysis Reports (Multi-dimensional technical, 200W SMA, sentiment & risk scoring)
+CREATE TABLE IF NOT EXISTS asset_analysis_reports (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    asset_id INT UNSIGNED NOT NULL,
+    user_id INT UNSIGNED NOT NULL,
+    overall_score INT UNSIGNED NOT NULL,
+    overall_signal ENUM('STRONG_BUY', 'BUY', 'NEUTRAL', 'SELL', 'STRONG_SELL') NOT NULL,
+    technical_score INT UNSIGNED NOT NULL,
+    sentiment_score INT UNSIGNED NOT NULL,
+    risk_level ENUM('LOW', 'MODERATE', 'HIGH', 'EXTREME') NOT NULL,
+    sma_200w DECIMAL(18, 8) NULL,
+    is_below_200w_sma BOOLEAN NOT NULL DEFAULT FALSE,
+    support_price DECIMAL(18, 8) NULL,
+    resistance_price DECIMAL(18, 8) NULL,
+    stop_loss_price DECIMAL(18, 8) NULL,
+    summary_text TEXT NOT NULL,
+    metrics_json LONGTEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_reports_asset (asset_id, created_at DESC),
+    INDEX idx_reports_user (user_id),
+    CONSTRAINT fk_reports_asset FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    CONSTRAINT fk_reports_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

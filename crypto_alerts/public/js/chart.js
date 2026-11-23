@@ -9,11 +9,13 @@
   let currentAssetId = null;
   let currentExchangeId = 1;
   let currentDays = 7; // Fallback default, updated from active button below
+  let currentTimeframe = "1d"; // Candle timeframe: 1h, 4h, 1d, 1w (Phase 8+ 3.6)
 
   const chartContainer = document.querySelector("#apexCandleChart");
   const assetSelect = document.querySelector("#chartAssetSelect");
   const exchangeSelect = document.querySelector("#chartExchangeSelect");
-  const timeframeButtons = document.querySelectorAll("[data-days]");
+  const rangeButtons = document.querySelectorAll("[data-days]");
+  const candleTfButtons = document.querySelectorAll("[data-timeframe]");
   const reloadBtn = document.querySelector("#chartReloadBtn");
   const loadingIndicator = document.querySelector("#chartLoadingIndicator");
 
@@ -43,14 +45,15 @@
    * @param {number} assetId
    * @param {number} exchangeId
    * @param {number} days
+   * @param {string} [timeframe='1d']
    */
-  async function loadAndRenderChart(assetId, exchangeId, days) {
+  async function loadAndRenderChart(assetId, exchangeId, days, timeframe = "1d") {
     if (!assetId) return;
 
     if (loadingIndicator) loadingIndicator.classList.remove("d-none");
 
     try {
-      const url = `/api/assets/${assetId}/chart-data?exchange_id=${exchangeId}&days=${days}`;
+      const url = `/api/assets/${assetId}/chart-data?exchange_id=${exchangeId}&days=${days}&timeframe=${timeframe}`;
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Failed to load chart data (${response.status})`);
@@ -142,7 +145,7 @@
           },
         },
         title: {
-          text: `${data.asset.symbol} on ${data.exchange.display_name} (${days}D Daily Candles)`,
+          text: `${data.asset.symbol} on ${data.exchange.display_name} (${days}D • ${timeframe} Candles)`,
           align: "left",
           style: {
             fontSize: "14px",
@@ -207,7 +210,7 @@
     currentAssetId = parseInt(assetSelect.value, 10);
     assetSelect.addEventListener("change", (e) => {
       currentAssetId = parseInt(e.target.value, 10);
-      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays);
+      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays, currentTimeframe);
     });
   }
 
@@ -215,13 +218,29 @@
     currentExchangeId = parseInt(exchangeSelect.value, 10);
     exchangeSelect.addEventListener("change", (e) => {
       currentExchangeId = parseInt(e.target.value, 10);
-      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays);
+      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays, currentTimeframe);
     });
   }
 
-  timeframeButtons.forEach((btn) => {
+  // Candle Timeframe Buttons (1h, 4h, 1d, 1w)
+  candleTfButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      timeframeButtons.forEach((b) => {
+      candleTfButtons.forEach((b) => {
+        b.classList.remove("btn-primary", "active");
+        b.classList.add("btn-outline-secondary");
+      });
+      btn.classList.remove("btn-outline-secondary");
+      btn.classList.add("btn-primary", "active");
+
+      currentTimeframe = btn.getAttribute("data-timeframe") || "1d";
+      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays, currentTimeframe);
+    });
+  });
+
+  // Range Days Buttons (7D, 30D, 180D)
+  rangeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      rangeButtons.forEach((b) => {
         b.classList.remove("btn-primary", "active");
         b.classList.add("btn-outline-secondary");
       });
@@ -229,13 +248,13 @@
       btn.classList.add("btn-primary", "active");
 
       currentDays = parseInt(btn.getAttribute("data-days"), 10) || 30;
-      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays);
+      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays, currentTimeframe);
     });
   });
 
   if (reloadBtn) {
     reloadBtn.addEventListener("click", () => {
-      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays);
+      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays, currentTimeframe);
     });
   }
 
@@ -257,7 +276,7 @@
   // Initial render when DOM is ready
   document.addEventListener("DOMContentLoaded", () => {
     if (currentAssetId) {
-      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays);
+      loadAndRenderChart(currentAssetId, currentExchangeId, currentDays, currentTimeframe);
     }
   });
 })();

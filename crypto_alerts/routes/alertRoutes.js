@@ -6,6 +6,7 @@
  */
 
 const express = require("express");
+const path = require("path");
 const router = express.Router();
 const pool = require("../config/db");
 const priceService = require("../services/priceService");
@@ -15,7 +16,10 @@ const schedulerService = require("../services/schedulerService");
 const authService = require("../services/authService");
 const cryptoService = require("../services/cryptoService");
 const notificationService = require("../services/notificationService");
-const { requireAuth, requireRole, requireAdmin, optionalAuth, sanitizeRedirectUrl } = require("../middleware/authMiddleware");
+const sseService = require("../services/sseService");
+const tokenService = require("../services/tokenService");
+const analysisService = require("../services/analysisService");
+const { requireAuth, requireRole, requireAdmin, requireScope, optionalAuth, sanitizeRedirectUrl } = require("../middleware/authMiddleware");
 
 /**
  * Route: GET /login
@@ -499,17 +503,34 @@ router.post("/alerts", requireAuth, async (req, res, next) => {
     if (isNaN(exchangeId) || exchangeId <= 0) return res.status(400).send("Invalid Exchange ID");
     if (isNaN(targetPrice) || targetPrice <= 0) return res.status(400).send("Target price must be greater than 0");
 
-    const validConditions = ["ABOVE", "BELOW", "PCT_CHANGE_24H_ABOVE", "PCT_CHANGE_24H_BELOW", "TRAILING_STOP"];
+    const validConditions = [
+      "ABOVE",
+      "BELOW",
+      "PCT_CHANGE_24H_ABOVE",
+      "PCT_CHANGE_24H_BELOW",
+      "TRAILING_STOP",
+      "RSI_ABOVE",
+      "RSI_BELOW",
+      "SMA_GOLDEN_CROSS",
+      "SMA_DEATH_CROSS",
+      "VOLUME_SPIKE",
+    ];
     if (!validConditions.includes(conditionType)) {
       return res.status(400).send("Invalid condition type");
     }
 
-    // Determine condition metric
+    // Determine condition metric (PRICE, PCT_CHANGE_24H, TRAILING_STOP, RSI_14, SMA_CROSS, VOLUME_SPIKE)
     let conditionMetric = "PRICE";
     if (conditionType.startsWith("PCT_CHANGE_24H")) {
       conditionMetric = "PCT_CHANGE_24H";
     } else if (conditionType === "TRAILING_STOP") {
       conditionMetric = "TRAILING_STOP";
+    } else if (conditionType.startsWith("RSI_")) {
+      conditionMetric = "RSI_14";
+    } else if (conditionType.startsWith("SMA_")) {
+      conditionMetric = "SMA_CROSS";
+    } else if (conditionType === "VOLUME_SPIKE") {
+      conditionMetric = "VOLUME_SPIKE";
     }
 
     // Query asset to get baseline current price
@@ -557,6 +578,25 @@ router.post("/alerts", requireAuth, async (req, res, next) => {
       ).catch((e) => console.warn("Notice: CREATED event log skipped:", e.message));
 
       await connection.commit();
+
+      if (req.xhr || req.headers.accept?.includes("application/json") || req.is("application/json")) {
+        return res.status(201).json({
+          success: true,
+          message: "Alert created successfully.",
+          alertId: newAlertId,
+          alert: {
+            id: newAlertId,
+            user_id: userId,
+            asset_id: assetId,
+            exchange_id: exchangeId,
+            target_price: targetPrice,
+            condition_type: conditionType,
+            condition_metric: conditionMetric,
+            notification_channel: channelToSave,
+            is_triggered: false,
+          },
+        });
+      }
     } catch (txErr) {
       await connection.rollback();
       throw txErr;
@@ -597,7 +637,18 @@ router.post("/alerts/:id/update", requireAuth, async (req, res, next) => {
     if (isNaN(exchangeId) || exchangeId <= 0) return res.status(400).send("Invalid Exchange ID");
     if (isNaN(targetPrice) || targetPrice <= 0) return res.status(400).send("Target price must be greater than 0");
 
-    const validConditions = ["ABOVE", "BELOW", "PCT_CHANGE_24H_ABOVE", "PCT_CHANGE_24H_BELOW", "TRAILING_STOP"];
+    const validConditions = [
+      "ABOVE",
+      "BELOW",
+      "PCT_CHANGE_24H_ABOVE",
+      "PCT_CHANGE_24H_BELOW",
+      "TRAILING_STOP",
+      "RSI_ABOVE",
+      "RSI_BELOW",
+      "SMA_GOLDEN_CROSS",
+      "SMA_DEATH_CROSS",
+      "VOLUME_SPIKE",
+    ];
     if (!validConditions.includes(conditionType)) {
       return res.status(400).send("Invalid condition type");
     }
@@ -607,6 +658,12 @@ router.post("/alerts/:id/update", requireAuth, async (req, res, next) => {
       conditionMetric = "PCT_CHANGE_24H";
     } else if (conditionType === "TRAILING_STOP") {
       conditionMetric = "TRAILING_STOP";
+    } else if (conditionType.startsWith("RSI_")) {
+      conditionMetric = "RSI_14";
+    } else if (conditionType.startsWith("SMA_")) {
+      conditionMetric = "SMA_CROSS";
+    } else if (conditionType === "VOLUME_SPIKE") {
+      conditionMetric = "VOLUME_SPIKE";
     }
 
     // Query asset baseline price if updating
@@ -655,6 +712,14 @@ router.post("/alerts/:id/update", requireAuth, async (req, res, next) => {
       ]
     ).catch((e) => console.warn("Notice: RE-ARMED event log skipped:", e.message));
 
+    if (req.xhr || req.headers.accept?.includes("application/json") || req.is("application/json")) {
+      return res.status(200).json({
+        success: true,
+        message: "Alert updated and re-armed successfully.",
+        alertId,
+      });
+    }
+
     res.redirect("/?msg=updated");
   } catch (err) {
     console.error("Error updating alert:", err);
@@ -679,7 +744,18 @@ router.post("/alerts/:id/delete", requireAuth, async (req, res, next) => {
     const [result] = await pool.query(deleteSql, [alertId, userId]);
 
     if (result.affectedRows === 0) {
+      if (req.xhr || req.headers.accept?.includes("application/json") || req.is("application/json")) {
+        return res.status(404).json({ error: "Alert not found or unauthorized" });
+      }
       return res.status(404).send("Alert not found or unauthorized");
+    }
+
+    if (req.xhr || req.headers.accept?.includes("application/json") || req.is("application/json")) {
+      return res.status(200).json({
+        success: true,
+        message: "Alert deleted successfully.",
+        alertId,
+      });
     }
 
     res.redirect("/");
@@ -961,15 +1037,31 @@ router.get("/api/notifications/logs", requireAuth, async (req, res, next) => {
 /**
  * Route: POST /refresh
  * @description Triggers a batch price refresh across all active assets via CCXT/fallback
- * and automatically evaluates price alert trigger states. Requires authentication.
+ * and automatically evaluates price alert trigger states. Supports AJAX/JSON for progress popups.
  * @route POST /refresh
  */
 router.post("/refresh", requireAuth, async (req, res, next) => {
   try {
-    await priceService.refreshAllPrices();
+    const result = await priceService.refreshAllPrices();
+
+    // If client requested JSON (AJAX progress popup)
+    if (req.xhr || req.headers.accept?.includes("application/json") || req.is("application/json") || req.query.format === "json") {
+      return res.status(200).json({
+        success: true,
+        message: "Market data and multi-timeframe candles refreshed successfully.",
+        result,
+      });
+    }
+
     res.redirect("/");
   } catch (err) {
     console.error("Error refreshing prices:", err);
+    if (req.xhr || req.headers.accept?.includes("application/json") || req.is("application/json") || req.query.format === "json") {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to refresh market data: " + err.message,
+      });
+    }
     next(err);
   }
 });
@@ -1004,6 +1096,249 @@ router.post("/reset-db", requireAuth, requireAdmin, async (req, res, next) => {
 });
 
 /**
+ * Sanitizes a string for CSV export to prevent Formula / CSV Injection.
+ * Escapes quotes and prepends a single quote if the value begins with =, +, -, @, or tab/return.
+ *
+ * @param {any} val
+ * @returns {string}
+ */
+function sanitizeCsvCell(val) {
+  if (val === null || val === undefined) return "";
+  let str = String(val);
+  // Neutralize CSV formula injection characters
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  // Double quote any existing quotes and wrap in quotes if containing comma or newline
+  if (str.includes('"') || str.includes(",") || str.includes("\n") || str.includes("\r")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+/**
+ * Route: GET /api/alerts.csv
+ * @description Exports the authenticated user's price alerts as a sanitized RFC 4180 CSV file.
+ * Requires 'read:alerts' scope for API tokens.
+ * @route GET /api/alerts.csv
+ */
+router.get("/api/alerts.csv", requireAuth, requireScope("read:alerts"), async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const statusFilter = req.query.status || "all";
+
+    let sql = `
+      SELECT pa.id, a.symbol AS asset_symbol, a.name AS asset_name, ex.display_name AS exchange_name,
+             pa.condition_type, pa.condition_metric, pa.target_price, pa.reference_baseline, pa.peak_price,
+             pa.is_triggered, pa.triggered_at, pa.notification_channel, pa.recipient_target, pa.created_at
+      FROM price_alerts pa
+      JOIN assets a ON pa.asset_id = a.id
+      JOIN exchanges ex ON pa.exchange_id = ex.id
+      WHERE pa.user_id = ?
+    `;
+    const params = [userId];
+
+    if (statusFilter === "active") {
+      sql += " AND pa.is_triggered = FALSE";
+    } else if (statusFilter === "triggered") {
+      sql += " AND pa.is_triggered = TRUE";
+    }
+    sql += " ORDER BY pa.created_at DESC";
+
+    const [alerts] = await pool.query(sql, params);
+
+    const filename = `crypto_alerts_${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const headers = [
+      "ID",
+      "Asset Symbol",
+      "Asset Name",
+      "Exchange",
+      "Condition Type",
+      "Condition Metric",
+      "Target Price",
+      "Baseline Price",
+      "Peak Price",
+      "Is Triggered",
+      "Triggered At",
+      "Channel",
+      "Created At",
+    ];
+
+    let csvOutput = headers.map(sanitizeCsvCell).join(",") + "\r\n";
+
+    for (const alt of alerts) {
+      const row = [
+        alt.id,
+        alt.asset_symbol,
+        alt.asset_name,
+        alt.exchange_name,
+        alt.condition_type,
+        alt.condition_metric || "PRICE",
+        alt.target_price,
+        alt.reference_baseline || "",
+        alt.peak_price || "",
+        alt.is_triggered ? "YES" : "NO",
+        alt.triggered_at || "",
+        alt.notification_channel || "IN_APP",
+        alt.created_at || "",
+      ];
+      csvOutput += row.map(sanitizeCsvCell).join(",") + "\r\n";
+    }
+
+    return res.status(200).send(csvOutput);
+  } catch (err) {
+    console.error("Error exporting alerts.csv:", err);
+    next(err);
+  }
+});
+
+/**
+ * Route: GET /api/alerts.json
+ * @description Exports price alerts in JSON format.
+ * Requires 'read:alerts' scope for API tokens.
+ * @route GET /api/alerts.json
+ */
+router.get("/api/alerts.json", requireAuth, requireScope("read:alerts"), async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const statusFilter = req.query.status || "all";
+
+    let sql = `
+      SELECT pa.id, a.symbol AS asset_symbol, a.name AS asset_name, ex.display_name AS exchange_name,
+             pa.condition_type, pa.condition_metric, pa.target_price, pa.reference_baseline, pa.peak_price,
+             pa.is_triggered, pa.triggered_at, pa.notification_channel, pa.recipient_target, pa.created_at
+      FROM price_alerts pa
+      JOIN assets a ON pa.asset_id = a.id
+      JOIN exchanges ex ON pa.exchange_id = ex.id
+      WHERE pa.user_id = ?
+    `;
+    const params = [userId];
+
+    if (statusFilter === "active") {
+      sql += " AND pa.is_triggered = FALSE";
+    } else if (statusFilter === "triggered") {
+      sql += " AND pa.is_triggered = TRUE";
+    }
+    sql += " ORDER BY pa.created_at DESC";
+
+    const [alerts] = await pool.query(sql, params);
+
+    return res.status(200).json({
+      success: true,
+      count: alerts.length,
+      exportedAt: new Date().toISOString(),
+      user: { id: req.user.id, username: req.user.username },
+      alerts,
+    });
+  } catch (err) {
+    console.error("Error exporting alerts.json:", err);
+    next(err);
+  }
+});
+
+/**
+ * Route: GET /api/tokens
+ * @description Lists active Personal Access Tokens for the authenticated user.
+ * @route GET /api/tokens
+ */
+router.get("/api/tokens", requireAuth, async (req, res, next) => {
+  try {
+    const tokens = await tokenService.listTokens(req.user.id);
+    return res.status(200).json({
+      success: true,
+      tokens,
+    });
+  } catch (err) {
+    console.error("Error listing tokens:", err);
+    next(err);
+  }
+});
+
+/**
+ * Route: POST /api/tokens
+ * @description Generates a new Personal Access Token for the authenticated user.
+ * @route POST /api/tokens
+ */
+router.post("/api/tokens", requireAuth, async (req, res, next) => {
+  try {
+    const { name, scopes, expiresInDays } = req.body;
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
+      return res.status(400).json({ error: "Token name is required" });
+    }
+
+    const created = await tokenService.createToken(req.user.id, name, scopes, expiresInDays);
+    return res.status(201).json({
+      success: true,
+      message: "Personal Access Token created successfully. Store this secret token securely as it will not be shown again!",
+      token: created,
+    });
+  } catch (err) {
+    console.error("Error creating token:", err);
+    next(err);
+  }
+});
+
+/**
+ * Route: DELETE /api/tokens/:id
+ * @description Revokes a Personal Access Token owned by the authenticated user.
+ * @route DELETE /api/tokens/:id
+ */
+router.delete("/api/tokens/:id", requireAuth, async (req, res, next) => {
+  try {
+    const tokenId = parseInt(req.params.id, 10);
+    if (isNaN(tokenId) || tokenId <= 0) {
+      return res.status(400).json({ error: "Invalid Token ID" });
+    }
+
+    const revoked = await tokenService.revokeToken(req.user.id, tokenId);
+    if (!revoked) {
+      return res.status(404).json({ error: "Token not found or already revoked" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Token revoked successfully",
+    });
+  } catch (err) {
+    console.error("Error revoking token:", err);
+    next(err);
+  }
+});
+
+/**
+ * Route: GET /api/openapi.json
+ * @description Returns OpenAPI 3.0 specification definition.
+ * @route GET /api/openapi.json
+ */
+router.get("/api/openapi.json", (req, res) => {
+  const specPath = path.join(__dirname, "..", "docs", "openapi.json");
+  res.sendFile(specPath);
+});
+
+/**
+ * Route: GET /api/docs
+ * @description Renders interactive Swagger UI documentation.
+ * @route GET /api/docs
+ */
+router.get("/api/docs", (req, res) => {
+  res.render("swagger");
+});
+
+/**
+ * Route: GET /api/stream
+ * @description Server-Sent Events (SSE) live streaming endpoint.
+ * Pushes real-time price updates, alert trigger events, and KPI metrics directly to active dashboards.
+ * @route GET /api/stream
+ */
+router.get("/api/stream", requireAuth, (req, res) => {
+  const userId = req.user ? req.user.id : null;
+  sseService.addClient(userId, req, res);
+});
+
+/**
  * Route: GET /api/assets/:id/chart-data
  * @description Fetches persisted OHLCV daily candlestick data and active price alert annotations
  * for an asset and exchange, formatted for ApexCharts 8.8.1. Requires authentication.
@@ -1017,6 +1352,7 @@ router.get("/api/assets/:id/chart-data", requireAuth, async (req, res, next) => 
     }
 
     const exchangeId = req.query.exchange_id ? parseInt(req.query.exchange_id, 10) : 1;
+    const timeframe = chartConfig.normalizeTimeframe(req.query.timeframe || "1d");
     const defaultDays = chartConfig.getDefaultTimeframeDays();
     let days = req.query.days ? parseInt(req.query.days, 10) : defaultDays;
     if (isNaN(days) || !chartConfig.isTimeframeSupported(days)) {
@@ -1048,33 +1384,48 @@ router.get("/api/assets/:id/chart-data", requireAuth, async (req, res, next) => 
       // Fallback to default
     }
 
-    // 3. Query persisted OHLCV candles
+    // 3. Query persisted OHLCV candles filtered by timeframe
     let series = [];
     try {
+      // Limit candles based on timeframe: intraday gets more points; 1w gets weekly count
+      const candleLimit = timeframe === "1h"
+        ? Math.min(days * 24, 500)
+        : (timeframe === "4h"
+          ? Math.min(days * 6, 500)
+          : (timeframe === "1w" ? Math.min(Math.ceil(days / 7), 200) : days));
       const [candleRows] = await pool.query(
         `SELECT candle_time, open_price, high_price, low_price, close_price
          FROM asset_ohlcv
-         WHERE asset_id = ? AND exchange_id = ?
+         WHERE asset_id = ? AND exchange_id = ? AND timeframe = ?
          ORDER BY candle_time DESC
          LIMIT ?`,
-        [assetId, exchangeId, days]
+        [assetId, exchangeId, timeframe, candleLimit]
       );
 
       if (candleRows && candleRows.length > 0) {
         // Reverse so chronological order (oldest to newest)
-        series = candleRows.reverse().map((c) => ({
-          x: typeof c.candle_time === "string" ? c.candle_time.slice(0, 10) : new Date(c.candle_time).toISOString().slice(0, 10),
-          y: [parseFloat(c.open_price), parseFloat(c.high_price), parseFloat(c.low_price), parseFloat(c.close_price)],
-        }));
+        series = candleRows.reverse().map((c) => {
+          let timeLabel;
+          if (typeof c.candle_time === "string") {
+            timeLabel = timeframe === "1h" || timeframe === "4h" ? c.candle_time.slice(0, 16).replace("T", " ") : c.candle_time.slice(0, 10);
+          } else {
+            const iso = new Date(c.candle_time).toISOString();
+            timeLabel = timeframe === "1h" || timeframe === "4h" ? iso.slice(0, 16).replace("T", " ") : iso.slice(0, 10);
+          }
+          return {
+            x: timeLabel,
+            y: [parseFloat(c.open_price), parseFloat(c.high_price), parseFloat(c.low_price), parseFloat(c.close_price)],
+          };
+        });
       }
     } catch {
-      // If table missing or offline, fallback to simulated candles
+      // If table missing or column pending migration, fallback to simulated candles
     }
 
-    // Fallback: If no persisted candles, generate fallback candles anchored to last_d1_close
+    // Fallback: If no persisted candles, generate fallback candles anchored to last_d1_close for the timeframe
     if (series.length === 0) {
       const basePrice = parseFloat(asset.last_d1_close) || 100.0;
-      series = priceService.generateFallbackCandles(basePrice, days);
+      series = priceService.generateFallbackCandles(basePrice, days, timeframe);
     }
 
     // 4. Fetch active price alerts for this asset and exchange for overlay annotations
@@ -1842,6 +2193,194 @@ router.delete("/api/admin/assets/:id", requireAuth, requireRole("ADMIN"), async 
     res.json({
       success: true,
       message: `Asset ${symbol} (ID: ${assetId}) permanently removed from master asset registry.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ==========================================
+// Coin Deep Analysis & 200W SMA Report Routes
+// ==========================================
+
+/**
+ * Route: POST /api/assets/:id/analysis
+ * @description Triggers a full deep analysis for the asset, computing technicals, sentiment,
+ * 200W SMA macro buy signals, composite scoring, and persists to asset_analysis_reports.
+ * Supports Bearer PAT or Session JWT.
+ */
+router.get("/api/assets/:id/analysis", requireAuth, requireScope("read:alerts"), async (req, res, next) => {
+  // Alias GET to perform or return latest
+  try {
+    const assetId = parseInt(req.params.id, 10);
+    if (isNaN(assetId) || assetId <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid Asset ID." });
+    }
+    const report = await analysisService.performCoinAnalysis({
+      assetId,
+      exchangeId: req.query.exchange_id ? parseInt(req.query.exchange_id, 10) : 1,
+      userId: req.user.id
+    });
+    res.json({ success: true, report });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/assets/:id/analysis", requireAuth, requireScope("read:alerts"), async (req, res, next) => {
+  try {
+    const assetId = parseInt(req.params.id, 10);
+    if (isNaN(assetId) || assetId <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid Asset ID." });
+    }
+    const exchangeId = req.body && req.body.exchange_id ? parseInt(req.body.exchange_id, 10) : 1;
+    const report = await analysisService.performCoinAnalysis({
+      assetId,
+      exchangeId: isNaN(exchangeId) || exchangeId <= 0 ? 1 : exchangeId,
+      userId: req.user.id
+    });
+    res.json({ success: true, report });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Route: GET /api/assets/:id/analysis/latest
+ * @description Retrieves the latest generated report for an asset.
+ */
+router.get("/api/assets/:id/analysis/latest", requireAuth, requireScope("read:alerts"), async (req, res, next) => {
+  try {
+    const assetId = parseInt(req.params.id, 10);
+    if (isNaN(assetId) || assetId <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid Asset ID." });
+    }
+
+    let report = await analysisService.getLatestReport(assetId);
+    if (!report) {
+      // If no cached report exists yet, generate one on-demand
+      report = await analysisService.performCoinAnalysis({
+        assetId,
+        exchangeId: 1,
+        userId: req.user.id
+      });
+    }
+
+    res.json({ success: true, report });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Route: GET /api/reports/:id.json
+ * @description Exports structured JSON for a specific analysis report by report ID.
+ */
+router.get("/api/reports/:id.json", requireAuth, requireScope("read:alerts"), async (req, res, next) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId) || reportId <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid Report ID." });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT r.*, a.symbol, a.name, a.last_d1_close
+       FROM asset_analysis_reports r
+       JOIN assets a ON r.asset_id = a.id
+       WHERE r.id = ?`,
+      [reportId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Analysis report not found." });
+    }
+
+    const r = rows[0];
+    let metrics = {};
+    try {
+      metrics = JSON.parse(r.metrics_json);
+    } catch {
+      metrics = {};
+    }
+
+    res.json({
+      success: true,
+      report: {
+        id: r.id,
+        assetId: r.asset_id,
+        symbol: r.symbol,
+        name: r.name,
+        currentPrice: Number(r.last_d1_close),
+        overallScore: r.overall_score,
+        overallSignal: r.overall_signal,
+        technicalScore: r.technical_score,
+        sentimentScore: r.sentiment_score,
+        riskLevel: r.risk_level,
+        supportPrice: r.support_price !== null ? Number(r.support_price) : null,
+        resistancePrice: r.resistance_price !== null ? Number(r.resistance_price) : null,
+        summaryText: r.summary_text,
+        metrics,
+        buyOption: metrics.buyOption || null,
+        createdAt: r.created_at
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Route: GET /reports/:id/print
+ * @description Printable clean HTML view styled for browser print / Save as PDF.
+ */
+router.get("/reports/:id/print", optionalAuth, async (req, res, next) => {
+  try {
+    const reportId = parseInt(req.params.id, 10);
+    if (isNaN(reportId) || reportId <= 0) {
+      return res.status(400).send("Invalid Report ID.");
+    }
+
+    const [rows] = await pool.query(
+      `SELECT r.*, a.symbol, a.name, a.last_d1_close, u.username
+       FROM asset_analysis_reports r
+       JOIN assets a ON r.asset_id = a.id
+       JOIN users u ON r.user_id = u.id
+       WHERE r.id = ?`,
+      [reportId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).send("Analysis report not found.");
+    }
+
+    const report = rows[0];
+    let metrics = {};
+    try {
+      metrics = JSON.parse(report.metrics_json);
+    } catch {
+      metrics = {};
+    }
+
+    res.render("report_print", {
+      report: {
+        id: report.id,
+        assetId: report.asset_id,
+        symbol: report.symbol,
+        name: report.name,
+        currentPrice: Number(report.last_d1_close),
+        overallScore: report.overall_score,
+        overallSignal: report.overall_signal,
+        technicalScore: report.technical_score,
+        sentimentScore: report.sentiment_score,
+        riskLevel: report.risk_level,
+        supportPrice: report.support_price !== null ? Number(report.support_price) : null,
+        resistancePrice: report.resistance_price !== null ? Number(report.resistance_price) : null,
+        summaryText: report.summary_text,
+        metrics,
+        buyOption: metrics.buyOption || null,
+        createdAt: report.created_at,
+        generatedBy: report.username
+      }
     });
   } catch (err) {
     next(err);
