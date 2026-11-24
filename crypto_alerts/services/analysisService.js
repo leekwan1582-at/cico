@@ -9,6 +9,7 @@
 const pool = require("../config/db");
 const indicatorService = require("./indicatorService");
 const sentimentService = require("./sentimentService");
+const geminiService = require("./geminiService");
 
 /**
  * Calculates rule-based technical subscore (0 to 100)
@@ -303,7 +304,7 @@ async function performCoinAnalysis({ assetId, exchangeId = 1, userId }) {
     }
 
     // Summary Text
-    const summaryText = generateSummaryText({
+    let summaryText = generateSummaryText({
         currentPrice,
         overallScore,
         overallSignal,
@@ -315,6 +316,62 @@ async function performCoinAnalysis({ assetId, exchangeId = 1, userId }) {
         resistancePrice,
         suggestedStopLoss
     });
+
+    // Scorecard breakdown details for transparent reporting & display
+    const scorecardDetails = {
+        technicalBreakdown: {
+            score: technicalScore,
+            trend: technicals.sma50 && technicals.sma200 ? (technicals.sma50 > technicals.sma200 ? "BULLISH_CROSS" : "BEARISH_CROSS") : "NEUTRAL",
+            rsiStatus: technicals.rsi14 !== null ? (technicals.rsi14 <= 30 ? "OVERSOLD" : technicals.rsi14 >= 70 ? "OVERBOUGHT" : "NEUTRAL") : "N/A",
+            macdStatus: technicals.macd ? (technicals.macd.isBullishCross ? "BULLISH_CROSS" : technicals.macd.isBearishCross ? "BEARISH_CROSS" : (technicals.macd.histogram > 0 ? "BULLISH_HISTOGRAM" : "BEARISH_HISTOGRAM")) : "N/A",
+            bollingerBandPosition: technicals.bollingerBands ? (technicals.bollingerBands.isSqueeze ? "SQUEEZE" : (technicals.bollingerBands.percentB <= 15 ? "LOWER_BAND" : technicals.bollingerBands.percentB >= 85 ? "UPPER_BAND" : "MID_CHANNEL")) : "N/A",
+        },
+        sentimentBreakdown: {
+            score: sentimentScore,
+            fearAndGreedValue: sentiment.fearAndGreed?.value ?? 50,
+            classification: sentiment.fearAndGreed?.classification ?? "Neutral",
+            momentum24hPct: sentiment.momentum?.change24h ?? 0,
+        },
+        macroBreakdown: {
+            sma200w: sma200wEval.sma200w,
+            distancePct: sma200wEval.distancePct,
+            isAtOrBelow200w: Boolean(sma200wEval.isAtOrBelow200w),
+            isApproaching200w: Boolean(sma200wEval.isApproaching200w),
+        },
+        weights: {
+            technical: "55%",
+            sentiment: "30%",
+            macroFloor: "15%",
+        },
+    };
+
+    // Perform AI Market Analysis via Gemini API (if key configured; falls back gracefully)
+    let aiCommentary = null;
+    try {
+        aiCommentary = await geminiService.generateAiMarketCommentary({
+            symbol: asset.symbol,
+            name: asset.name,
+            currentPrice,
+            overallScore,
+            overallSignal,
+            technicalScore,
+            sentimentScore,
+            riskLevel,
+            technicals,
+            sma200wEval,
+            sentiment,
+            supportPrice,
+            resistancePrice,
+            suggestedStopLoss,
+            scorecardDetails,
+        });
+
+        if (aiCommentary && aiCommentary.executiveSummary) {
+            summaryText = `${summaryText}\n\n🤖 **AI Analyst Commentary (${aiCommentary.modelUsed})**:\n${aiCommentary.executiveSummary}`;
+        }
+    } catch (aiErr) {
+        console.warn("Notice: Gemini analysis synthesis skipped:", aiErr.message);
+    }
 
     // Buy Option Structure for UI & API consumers
     const buyOption = {
@@ -349,7 +406,9 @@ async function performCoinAnalysis({ assetId, exchangeId = 1, userId }) {
             resistancePrice,
             suggestedStopLoss
         },
-        buyOption
+        buyOption,
+        scorecardDetails,
+        aiCommentary
     };
 
     // 8. Persist to asset_analysis_reports table (if table exists)
@@ -396,6 +455,8 @@ async function performCoinAnalysis({ assetId, exchangeId = 1, userId }) {
         summaryText,
         metrics: metricsPayload,
         buyOption,
+        scorecardDetails,
+        aiCommentary,
         createdAt: new Date().toISOString()
     };
 }
@@ -446,6 +507,8 @@ async function getLatestReport(assetId) {
             summaryText: report.summary_text,
             metrics,
             buyOption: metrics.buyOption || null,
+            scorecardDetails: metrics.scorecardDetails || null,
+            aiCommentary: metrics.aiCommentary || null,
             createdAt: report.created_at
         };
     } catch (err) {

@@ -1492,6 +1492,11 @@
   <% if (assetAdded) { %>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
+        if (window.history && window.history.replaceState) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState(null, document.title, cleanUrl);
+        }
+
         const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
         Swal.fire({
           icon: 'success',
@@ -1508,6 +1513,11 @@
   <% } else if (assetDeleted) { %>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
+        if (window.history && window.history.replaceState) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState(null, document.title, cleanUrl);
+        }
+
         const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
         Swal.fire({
           icon: 'info',
@@ -1524,6 +1534,12 @@
   <% } else if (swalMessage === 'saved') { %>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
+        // Clean URL to http://localhost:3000/ immediately so query param does not persist on reload
+        if (window.history && window.history.replaceState) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState(null, document.title, cleanUrl);
+        }
+
         const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
         Swal.fire({
           icon: 'success',
@@ -1540,6 +1556,12 @@
   <% } else if (swalMessage === 'updated') { %>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
+        // Clean URL to http://localhost:3000/ immediately so query param does not persist on reload
+        if (window.history && window.history.replaceState) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState(null, document.title, cleanUrl);
+        }
+
         const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
         Swal.fire({
           icon: 'success',
@@ -2296,6 +2318,65 @@
                   <strong class="text-primary d-block mb-1">Executive Summary:</strong>
                   <div class="small" style="white-space: pre-line;">${rep.summaryText}</div>
                 </div>
+
+                ${rep.aiCommentary && rep.aiCommentary.isAiGenerated ? `
+                  <div class="p-3 mb-3 border border-primary-subtle rounded ${dark ? 'bg-dark' : 'bg-light'}">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <strong class="text-primary"><i class="bi bi-robot me-1"></i>Gemini AI Market Scenarios</strong>
+                      <span class="badge bg-primary text-white" style="font-size: 0.7rem;">${rep.aiCommentary.modelUsed}</span>
+                    </div>
+                    ${rep.aiCommentary.scorecardSummary ? `<div class="small text-muted mb-2">${rep.aiCommentary.scorecardSummary}</div>` : ''}
+                    <div class="row g-2 small">
+                      <div class="col-6">
+                        <div class="p-2 border border-success-subtle rounded bg-body-tertiary h-100">
+                          <strong class="text-success d-block mb-1">Bull Scenario:</strong>
+                          <span>${rep.aiCommentary.bullScenario}</span>
+                        </div>
+                      </div>
+                      <div class="col-6">
+                        <div class="p-2 border border-danger-subtle rounded bg-body-tertiary h-100">
+                          <strong class="text-danger d-block mb-1">Bear Scenario:</strong>
+                          <span>${rep.aiCommentary.bearScenario}</span>
+                        </div>
+                      </div>
+                    </div>
+                    ${rep.aiCommentary.recommendation ? `
+                      <div class="mt-2 pt-2 border-top small">
+                        <strong class="text-primary">Recommendation:</strong> ${rep.aiCommentary.recommendation}
+                      </div>
+                    ` : ''}
+                  </div>
+                ` : ''}
+
+                <!-- Scorecard Component Breakdown -->
+                ${rep.scorecardDetails ? `
+                  <div class="p-2 mb-3 border rounded ${dark ? 'bg-dark' : 'bg-light'}">
+                    <strong class="text-secondary d-block mb-1 small text-uppercase" style="letter-spacing: 0.5px;">Scorecard Component Weights & Factors:</strong>
+                    <div class="row g-2 small">
+                      <div class="col-4">
+                        <div class="p-2 border rounded bg-body-tertiary">
+                          <span class="text-muted d-block" style="font-size: 0.72rem;">Technicals (${rep.scorecardDetails.weights?.technical || '55%'})</span>
+                          <strong>${rep.scorecardDetails.technicalBreakdown?.score || rep.technicalScore}/100</strong>
+                          <div class="text-muted" style="font-size: 0.7rem;">Trend: ${rep.scorecardDetails.technicalBreakdown?.trend || 'N/A'}</div>
+                        </div>
+                      </div>
+                      <div class="col-4">
+                        <div class="p-2 border rounded bg-body-tertiary">
+                          <span class="text-muted d-block" style="font-size: 0.72rem;">Sentiment (${rep.scorecardDetails.weights?.sentiment || '30%'})</span>
+                          <strong>${rep.scorecardDetails.sentimentBreakdown?.score || rep.sentimentScore}/100</strong>
+                          <div class="text-muted" style="font-size: 0.7rem;">Mood: ${rep.scorecardDetails.sentimentBreakdown?.classification || 'N/A'}</div>
+                        </div>
+                      </div>
+                      <div class="col-4">
+                        <div class="p-2 border rounded bg-body-tertiary">
+                          <span class="text-muted d-block" style="font-size: 0.72rem;">Macro Floor (${rep.scorecardDetails.weights?.macroFloor || '15%'})</span>
+                          <strong>${rep.scorecardDetails.macroBreakdown?.isAtOrBelow200w ? 'FLOOR' : 'CYCLE'}</strong>
+                          <div class="text-muted" style="font-size: 0.7rem;">${rep.scorecardDetails.macroBreakdown?.distancePct ? (rep.scorecardDetails.macroBreakdown.distancePct + '% away') : 'N/A'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ` : ''}
 
                 <!-- Detail Table -->
                 <div class="table-responsive small">

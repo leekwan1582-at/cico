@@ -147,6 +147,146 @@
     </div>
   </div>
 
+  <!-- Quantitative Scorecard Component Breakdown -->
+  <% const sc = (report.scorecardDetails) || (report.metrics && report.metrics.scorecardDetails); %>
+  <% if (sc) { %>
+    <div class="card mb-4 border-0 shadow-sm" style="background: #fbfcfd; border: 1px solid #e2e8f0 !important; border-radius: 10px;">
+      <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center py-3">
+        <span><i class="bi bi-clipboard2-data-fill text-primary me-2"></i>Scorecard Factor Breakdown</span>
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Weighted Model</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <!-- Technical Factor Column -->
+          <div class="col-md-4">
+            <div class="p-3 bg-white rounded border h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-bold text-dark">Technical Factors</span>
+                <span class="badge bg-info-subtle text-info fw-bold"><%= sc.technicalBreakdown.score %>/100</span>
+              </div>
+              <div class="small text-muted mb-2">Weight: <strong><%= sc.weights.technical %></strong></div>
+              <ul class="list-unstyled small mb-0">
+                <li class="py-1 border-bottom d-flex justify-content-between">
+                  <span class="text-secondary">Trend (SMA50/200):</span>
+                  <strong><%= sc.technicalBreakdown.trend.replace('_', ' ') %></strong>
+                </li>
+                <li class="py-1 border-bottom d-flex justify-content-between">
+                  <span class="text-secondary">RSI (14) State:</span>
+                  <strong><%= sc.technicalBreakdown.rsiStatus %></strong>
+                </li>
+                <li class="py-1 border-bottom d-flex justify-content-between">
+                  <span class="text-secondary">MACD Signal:</span>
+                  <strong><%= sc.technicalBreakdown.macdStatus.replace('_', ' ') %></strong>
+                </li>
+                <li class="py-1 d-flex justify-content-between">
+                  <span class="text-secondary">Band Position:</span>
+                  <strong><%= sc.technicalBreakdown.bollingerBandPosition.replace('_', ' ') %></strong>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Sentiment Factor Column -->
+          <div class="col-md-4">
+            <div class="p-3 bg-white rounded border h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-bold text-dark">Market Sentiment</span>
+                <span class="badge bg-warning-subtle text-warning-emphasis fw-bold"><%= sc.sentimentBreakdown.score %>/100</span>
+              </div>
+              <div class="small text-muted mb-2">Weight: <strong><%= sc.weights.sentiment %></strong></div>
+              <ul class="list-unstyled small mb-0">
+                <li class="py-1 border-bottom d-flex justify-content-between">
+                  <span class="text-secondary">Fear & Greed Index:</span>
+                  <strong><%= sc.sentimentBreakdown.fearAndGreedValue %>/100</strong>
+                </li>
+                <li class="py-1 border-bottom d-flex justify-content-between">
+                  <span class="text-secondary">Market Mood:</span>
+                  <strong><%= sc.sentimentBreakdown.classification %></strong>
+                </li>
+                <li class="py-1 d-flex justify-content-between">
+                  <span class="text-secondary">24h Momentum:</span>
+                  <strong class="<%= sc.sentimentBreakdown.momentum24hPct >= 0 ? 'text-success' : 'text-danger' %>">
+                    <%= sc.sentimentBreakdown.momentum24hPct >= 0 ? '+' : '' %><%= sc.sentimentBreakdown.momentum24hPct %>%
+                  </strong>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Macro Floor Factor Column -->
+          <div class="col-md-4">
+            <div class="p-3 bg-white rounded border h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-bold text-dark">Macro Floor (200W)</span>
+                <span class="badge <%= sc.macroBreakdown.isAtOrBelow200w ? 'bg-success' : 'bg-secondary' %> fw-bold">
+                  <%= sc.macroBreakdown.isAtOrBelow200w ? 'VALUE FLOOR' : 'CYCLE' %>
+                </span>
+              </div>
+              <div class="small text-muted mb-2">Weight: <strong><%= sc.weights.macroFloor %></strong></div>
+              <ul class="list-unstyled small mb-0">
+                <li class="py-1 border-bottom d-flex justify-content-between">
+                  <span class="text-secondary">200W SMA Floor:</span>
+                  <strong><%= sc.macroBreakdown.sma200w ? '$' + Number(sc.macroBreakdown.sma200w).toLocaleString() : 'N/A' %></strong>
+                </li>
+                <li class="py-1 border-bottom d-flex justify-content-between">
+                  <span class="text-secondary">Distance from Floor:</span>
+                  <strong class="<%= sc.macroBreakdown.isAtOrBelow200w ? 'text-success' : '' %>">
+                    <%= sc.macroBreakdown.distancePct !== null ? (sc.macroBreakdown.distancePct > 0 ? '+' : '') + sc.macroBreakdown.distancePct + '%' : 'N/A' %>
+                  </strong>
+                </li>
+                <li class="py-1 d-flex justify-content-between">
+                  <span class="text-secondary">Discount Status:</span>
+                  <strong><%= sc.macroBreakdown.isAtOrBelow200w ? 'Historical Floor' : (sc.macroBreakdown.isApproaching200w ? 'Approaching' : 'Standard') %></strong>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
+  <!-- AI Intelligence & Trade Scenarios (Gemini Engine) -->
+  <% const ai = (report.aiCommentary) || (report.metrics && report.metrics.aiCommentary); %>
+  <% if (ai && ai.isAiGenerated) { %>
+    <div class="card mb-4 border-0 shadow-sm" style="background: linear-gradient(180deg, #f0f7ff 0%, #ffffff 100%); border: 1px solid #cce5ff !important; border-radius: 10px;">
+      <div class="card-header bg-transparent fw-bold d-flex justify-content-between align-items-center py-3 border-bottom">
+        <span class="text-primary"><i class="bi bi-robot text-primary me-2"></i>Gemini AI Market Synthesis & Scenarios</span>
+        <span class="badge bg-primary text-white"><%= ai.modelUsed %></span>
+      </div>
+      <div class="card-body">
+        <% if (ai.scorecardSummary) { %>
+          <div class="mb-3">
+            <strong class="text-dark d-block mb-1 small text-uppercase" style="letter-spacing: 0.5px;">Scorecard Evaluation</strong>
+            <p class="small text-muted mb-0" style="line-height: 1.6;"><%= ai.scorecardSummary %></p>
+          </div>
+        <% } %>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <div class="p-3 bg-white rounded border border-success-subtle h-100">
+              <div class="fw-bold text-success mb-1"><i class="bi bi-arrow-up-circle me-1"></i>Bull Case Scenario</div>
+              <p class="small text-muted mb-0" style="line-height: 1.5;"><%= ai.bullScenario %></p>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="p-3 bg-white rounded border border-danger-subtle h-100">
+              <div class="fw-bold text-danger mb-1"><i class="bi bi-arrow-down-circle me-1"></i>Bear Case Scenario</div>
+              <p class="small text-muted mb-0" style="line-height: 1.5;"><%= ai.bearScenario %></p>
+            </div>
+          </div>
+        </div>
+
+        <% if (ai.recommendation) { %>
+          <div class="p-3 rounded bg-white border border-primary-subtle">
+            <strong class="text-primary d-block mb-1 small text-uppercase"><i class="bi bi-lightning-charge me-1"></i>Tactical Recommendation</strong>
+            <p class="small mb-0 text-dark" style="line-height: 1.6;"><%= ai.recommendation %></p>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  <% } %>
+
   <!-- Macro & Technical Indicators Breakdown -->
   <div class="row g-4 mb-4">
     <div class="col-md-6">

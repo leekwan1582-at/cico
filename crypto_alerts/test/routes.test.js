@@ -740,7 +740,7 @@ test("Phase 4 Integration Tests - Express CRUD Routes & Error Guards", async (t)
     assert.equal(lastUpdate.params[lastUpdate.params.length - 1], 2, "IDOR check: must bind authenticated user_id (2)");
   });
 
-  await t.test("POST /refresh triggers priceService.refreshAllPrices and redirects", async () => {
+  await t.test("POST /refresh triggers priceService.refreshAllPrices and redirects for admin", async () => {
     let refreshCalled = false;
     priceService.refreshAllPrices = async () => {
       refreshCalled = true;
@@ -755,7 +755,17 @@ test("Phase 4 Integration Tests - Express CRUD Routes & Error Guards", async (t)
 
     assert.equal(res.status, 302);
     assert.equal(res.headers.get("location"), "/");
-    assert.equal(refreshCalled, true, "refreshAllPrices() should be invoked");
+    assert.equal(refreshCalled, true, "refreshAllPrices() should be invoked for admin");
+  });
+
+  await t.test("POST /refresh returns 403 Forbidden for non-admin user", async () => {
+    const res = await fetch(`${baseUrl}/refresh`, {
+      method: "POST",
+      headers: traderHeaders,
+      redirect: "manual",
+    });
+
+    assert.equal(res.status, 403, "Non-admin trader must be forbidden from triggering refresh");
   });
 
   await t.test("POST /refresh rejects unauthenticated requests", async () => {

@@ -475,4 +475,24 @@ test("Phase 1-3 Unit Tests - Fallback Data & Schema Integrity", async (t) => {
     assert.ok(summary.includes("STRONG BUY"));
     assert.ok(summary.includes("Support at $46,000"));
   });
+
+  await t.test("geminiService - model resolution, fallback and commentary generation", async () => {
+    const geminiService = require("../services/geminiService");
+
+    // 1. Model resolution
+    const originalModel = process.env.GEMINI_MODEL;
+    delete process.env.GEMINI_MODEL;
+    assert.equal(geminiService.getModelName(), "gemini-3.8-flash", "Must default to gemini-3.8-flash when GEMINI_MODEL is unset");
+
+    process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
+    assert.equal(geminiService.getModelName(), "gemini-3.1-flash-lite");
+    process.env.GEMINI_MODEL = originalModel;
+
+    // 2. Fallback when API key is unset
+    const originalKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    const noKeyResult = await geminiService.generateAiMarketCommentary({ symbol: "BTC/USDT" });
+    assert.equal(noKeyResult, null, "Should return null fallback when GEMINI_API_KEY is not set");
+    process.env.GEMINI_API_KEY = originalKey;
+  });
 });

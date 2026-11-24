@@ -1038,9 +1038,10 @@ router.get("/api/notifications/logs", requireAuth, async (req, res, next) => {
  * Route: POST /refresh
  * @description Triggers a batch price refresh across all active assets via CCXT/fallback
  * and automatically evaluates price alert trigger states. Supports AJAX/JSON for progress popups.
+ * Restricted to administrators (ADMIN role only).
  * @route POST /refresh
  */
-router.post("/refresh", requireAuth, async (req, res, next) => {
+router.post("/refresh", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const result = await priceService.refreshAllPrices();
 
